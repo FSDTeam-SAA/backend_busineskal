@@ -32,7 +32,7 @@ export const becomeVendor = catchAsync(async (req, res) => {
   }
 
   // validate if already a vendor
-  if (user.role === "manager" && user.vendorStatus === "approved") {
+  if (user.role === "seller" && user.vendorStatus === "approved") {
     throw new AppError(httpStatus.BAD_REQUEST, "User is already a vendor");
   }
 
@@ -42,7 +42,7 @@ export const becomeVendor = catchAsync(async (req, res) => {
     tradeLicense = { public_id: upload.public_id, url: upload.secure_url };
   }
 
-  user.role = "manager";
+  user.role = "seller";
   user.storeName = storeName;
   user.storeDescription = description;
   user.storeLogo = storeLogo;
@@ -72,8 +72,8 @@ export const becomeVendor = catchAsync(async (req, res) => {
 export const approveVendor = catchAsync(async (req, res) => {
   const user = await User.findByIdAndUpdate(
     req.params.userId,
-    { role: "manager", vendorStatus: "approved" },
-    { new: true }
+    { role: "seller", vendorStatus: "approved" },
+    { new: true },
   ).select("-password");
 
   sendResponse(res, {
@@ -102,7 +102,7 @@ export const updateStock = catchAsync(async (req, res) => {
   const product = await Product.findOneAndUpdate(
     { _id: req.params.id, vendor: req.user._id },
     { stock },
-    { new: true }
+    { new: true },
   );
 
   if (!product) throw new AppError(httpStatus.NOT_FOUND, "Product not found");
@@ -116,8 +116,8 @@ export const updateStock = catchAsync(async (req, res) => {
 });
 
 export const getVendorList = catchAsync(async (req, res) => {
-  const vendors = await User.find({ role: "manager" }).select(
-    "-password -refreshToken"
+  const vendors = await User.find({ role: "seller" }).select(
+    "-password -refreshToken",
   );
 
   sendResponse(res, {
@@ -130,7 +130,7 @@ export const getVendorList = catchAsync(async (req, res) => {
 
 export const getVendorById = catchAsync(async (req, res) => {
   const vendor = await User.findById(req.params.userId).select(
-    "-password -refreshToken"
+    "-password -refreshToken",
   );
 
   sendResponse(res, {

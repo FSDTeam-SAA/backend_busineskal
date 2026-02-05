@@ -17,7 +17,7 @@ export const createOrder = catchAsync(async (req, res) => {
     if (!product || product.stock < item.quantity) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        `Insufficient stock for ${product?.title}`
+        `Insufficient stock for ${product?.title}`,
       );
     }
     totalAmount += product.price * item.quantity;
@@ -67,7 +67,7 @@ export const getOrders = catchAsync(async (req, res) => {
   const query = { customer: req.user._id };
   if (status) query.status = status;
 
-  if (req.user.role === "manager") {
+  if (req.user.role === "seller") {
     query.vendor = req.user._id;
     delete query.customer;
   } else if (req.user.role === "admin") {
@@ -108,7 +108,7 @@ export const getOrderById = catchAsync(async (req, res) => {
     throw new AppError(httpStatus.FORBIDDEN, "Access denied");
   }
   if (
-    req.user.role === "manager" &&
+    req.user.role === "seller" &&
     order.vendor.toString() !== req.user._id.toString()
   ) {
     throw new AppError(httpStatus.FORBIDDEN, "Access denied");
@@ -123,10 +123,10 @@ export const getOrderById = catchAsync(async (req, res) => {
 });
 
 export const updateOrderStatus = catchAsync(async (req, res) => {
-  if (req.user.role !== "manager" && req.user.role !== "admin") {
+  if (req.user.role !== "seller" && req.user.role !== "admin") {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      "Only managers/admins can update status"
+      "Only managers/admins can update status",
     );
   }
 
@@ -134,7 +134,7 @@ export const updateOrderStatus = catchAsync(async (req, res) => {
   const order = await OrderModel.findOneAndUpdate(
     { orderId: req.params.orderId },
     { status, trackingNumber },
-    { new: true }
+    { new: true },
   ).populate("items.product");
 
   if (!order || order.vendor.toString() !== req.user._id.toString()) {

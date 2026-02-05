@@ -7,10 +7,6 @@ const productSchema = new Schema(
       required: [true, "Product title is required"],
       trim: true,
     },
-    description: {
-      type: String,
-      required: [true, "Product description is required"],
-    },
     detailedDescription: {
       type: String,
       default: "",
@@ -32,6 +28,9 @@ const productSchema = new Schema(
         url: { type: String },
       },
     ],
+    thumbnail: {
+      type: String,
+    },
     category: {
       type: Schema.Types.ObjectId,
       ref: "Category",
@@ -72,12 +71,16 @@ const productSchema = new Schema(
       min: [0, "Rating cannot be negative"],
       max: [5, "Rating cannot exceed 5"],
     },
+    country: {
+      type: String,
+      default: "",
+    },
     reviewsCount: {
       type: Number,
       default: 0,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Update stock status on stock change
@@ -93,5 +96,9 @@ productSchema.pre("save", function (next) {
   }
   next();
 });
+
+productSchema.index({ verified: 1, category: 1, price: 1 });
+productSchema.index({ vendor: 1 });
+
 
 export const Product = mongoose.model("Product", productSchema);

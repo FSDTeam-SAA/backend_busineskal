@@ -10,13 +10,13 @@ import { User } from "../model/user.model.js";
 export const addProduct = catchAsync(async (req, res) => {
   const {
     title,
-    description,
     detailedDescription,
     price,
     colors,
     category,
     sku,
     stock,
+    country,
   } = req.body;
   const vendor = req.user._id;
 
@@ -24,12 +24,12 @@ export const addProduct = catchAsync(async (req, res) => {
   const user = await User.findById(vendor);
   if (
     !user ||
-    (user.role !== "manager" && user.role !== "admin") ||
+    (user.role !== "seller" && user.role !== "admin") ||
     user.vendorStatus !== "approved"
   ) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      "Only managers and admins with approved vendor status can add products"
+      "Only sellers and admins with approved vendor status can add products",
     );
   }
 
@@ -52,16 +52,19 @@ export const addProduct = catchAsync(async (req, res) => {
     }
   }
 
+  const thumbnail = photos.length > 0 ? photos[0].url : null;
+
   const product = await Product.create({
     title,
-    description,
     detailedDescription,
     price: parseFloat(price),
     colors: colors ? colors.split(",").map((color) => color.trim()) : [],
     photos,
     category,
+    country,
     vendor,
     sku,
+    thumbnail,
     stock: stock ? parseInt(stock) : 0,
   });
 
@@ -92,12 +95,12 @@ export const updateProduct = catchAsync(async (req, res) => {
 
   // Authorization check
   if (
-    req.user.role === "manager" &&
+    req.user.role === "seller" &&
     product.vendor.toString() !== req.user._id.toString()
   ) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      "Cannot update other vendor's product"
+      "Cannot update other vendor's product",
     );
   }
 
@@ -134,7 +137,7 @@ export const updateProduct = catchAsync(async (req, res) => {
     {
       new: true,
       runValidators: true,
-    }
+    },
   )
     .populate("category", "name path")
     .populate("vendor", "name storeName");
@@ -260,12 +263,12 @@ export const deleteProduct = catchAsync(async (req, res) => {
 
   if (!product) throw new AppError(httpStatus.NOT_FOUND, "Product not found");
   if (
-    req.user.role === "manager" &&
+    req.user.role === "seller" &&
     product.vendor.toString() !== req.user._id.toString()
   ) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      "Cannot delete other vendor's product"
+      "Cannot delete other vendor's product",
     );
   }
 
@@ -277,18 +280,58 @@ export const deleteProduct = catchAsync(async (req, res) => {
   });
 });
 
-// Admin-specific: Verify product
-export const verifyProduct = catchAsync(async (req, res) => {
-  const product = await Product.findByIdAndUpdate(
-    req.params.id,
-    { verified: true },
-    { new: true }
-  );
+export const getMyProducts = catchAsync(async (req, res) => {
+  const products = await Product.find({ vendor: req.user._id }).sort({
+    createdAt: -1,
+  });
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: "Product verified",
-    data: product,
+    message: "Your products fetched successfully",
+    data: products,
+  });
+});
+
+export const getPendingProducts = catchAsync(async (req, res) => {
+  const products = await Product.find({ verified: false })
+    .populate("vendor", "name email vendorStatus")
+    .populate("category", "name")
+    .sort({ createdAt: -1 });
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Pending products fetched",
+    data: products,
+  });
+});
+
+export const updateProductVerification = catchAsync(async (req, res) => {
+  const { productId } = req.params;
+  const { verified } = req.body; // true / false
+
+  if (typeof verified !== "boolean") {
+    throw new AppError(httpStatus.BAD_REQUEST, "Verified must be boolean");
+  }
+
+  const product = await Product.findById(productId);
+  if (!product) {
+    throw new AppError(httpStatus.NOT_FOUND, "Product not found");
+  }
+
+  product.verified = verified;
+  await product.save();
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: verified
+      ? "Product approved successfully"
+      : "Product rejected successfully",
+    data: {
+      _id: product._id,
+      verified: product.verified,
+    },
   });
 });

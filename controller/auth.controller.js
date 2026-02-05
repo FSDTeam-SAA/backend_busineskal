@@ -13,7 +13,7 @@ import { sendEmail } from "../utils/sendEmail.js";
 import { User } from "./../model/user.model.js";
 
 export const register = catchAsync(async (req, res, next) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, role } = req.body;
 
   if (!name || !email || !password) {
     return next(new AppError(400, "Name, email and password are required"));
@@ -29,22 +29,26 @@ export const register = catchAsync(async (req, res, next) => {
     name,
     email,
     password,
-    isEmailVerified: true, 
+    role: role || "user",
+    isEmailVerified: true,
   });
 
   sendResponse(res, {
     statusCode: 201,
     success: true,
-    message: "Registration successful. You can now log in.",
+    message:
+      role === "user"
+        ? "Registration successful. You can now log in."
+        : "Registration successful as a seller. Please wait for admin approval.",
     data: {
       _id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
+      managerStatus: user.managerStatus,
     },
   });
 });
-
 
 export const login = catchAsync(async (req, res, next) => {
   const { email, password } = req.body;
@@ -59,10 +63,7 @@ export const login = catchAsync(async (req, res, next) => {
     return next(new AppError(404, "User not found"));
   }
 
-  const isPasswordValid = await User.isPasswordMatched(
-    password,
-    user.password
-  );
+  const isPasswordValid = await User.isPasswordMatched(password, user.password);
 
   if (!isPasswordValid) {
     return next(new AppError(401, "Invalid email or password"));
@@ -70,7 +71,16 @@ export const login = catchAsync(async (req, res, next) => {
 
   if (!user.isEmailVerified) {
     return next(
-      new AppError(403, "Email not verified. Please verify your email.")
+      new AppError(403, "Email not verified. Please verify your email."),
+    );
+  }
+
+  if (user.role === "seller" && user.vendorStatus === "pending") {
+    return next(
+      new AppError(
+        403,
+        "Your seller status is pending. Please wait for admin approval.",
+      ),
     );
   }
 
@@ -83,13 +93,13 @@ export const login = catchAsync(async (req, res, next) => {
   const accessToken = createToken(
     jwtPayload,
     process.env.JWT_ACCESS_SECRET,
-    process.env.JWT_ACCESS_EXPIRES_IN
+    process.env.JWT_ACCESS_EXPIRES_IN,
   );
 
   const refreshToken = createToken(
     jwtPayload,
     process.env.JWT_REFRESH_SECRET,
-    process.env.JWT_REFRESH_EXPIRES_IN
+    process.env.JWT_REFRESH_EXPIRES_IN,
   );
 
   // Save refresh token in DB
@@ -110,12 +120,14 @@ export const login = catchAsync(async (req, res, next) => {
     message: "Login successful",
     data: {
       accessToken,
+      refreshToken,
+      name: user.name,
+      email: user.email,
       role: user.role,
       _id: user._id,
     },
   });
 });
-
 
 // export const register = catchAsync(async (req, res) => {
 //   const { name, email, role, password, confirmPassword } = req.body;
@@ -143,7 +155,7 @@ export const login = catchAsync(async (req, res, next) => {
 //     password,
 //     verificationInfo: { token: "", verified: true },
 //     role,
-//     vendorStatus: role === "manager" ? "pending" : undefined,
+//     vendorStatus: role === "seller" ? "pending" : undefined,
 //   });
 
 //   const jwtPayload = {
@@ -255,26 +267,37 @@ export const login = catchAsync(async (req, res, next) => {
 export const forgetPassword = catchAsync(async (req, res, next) => {
   const { email } = req.body;
 
+  if (!email) {
+    return next(new AppError(400, "Email is required"));
+  }
+
   const user = await User.findOne({ email });
   if (!user) return next(new AppError(404, "User not found"));
 
   const now = Date.now();
   const lastSent = user.otp?.lastSentAt ? user.otp.lastSentAt.getTime() : 0;
+
   if (now - lastSent < 60 * 1000) {
     return next(new AppError(429, "Please wait before requesting another OTP"));
   }
 
-  const otp = generateOTP(6);
+  const rawOtp = generateOTP(6);
+
   user.otp = {
-    hash: hashOTP(otp),
-    expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    hash: hashOTP(rawOtp),
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 min
     purpose: "reset_password",
     attempts: 0,
     lastSentAt: new Date(),
   };
 
   await user.save();
-  await sendEmail(user.email, "Reset Password", `Your OTP is ${otp}`);
+
+  await sendEmail(
+    user.email,
+    "Reset Password",
+    `Your password reset OTP is ${rawOtp}`,
+  );
 
   sendResponse(res, {
     statusCode: 200,
@@ -287,9 +310,11 @@ export const forgetPassword = catchAsync(async (req, res, next) => {
 export const resetPassword = catchAsync(async (req, res, next) => {
   const { email, otp, password, confirmPassword } = req.body;
 
-  if (!email || !otp || !password)
+  if (!email || !otp || !password) {
     return next(new AppError(400, "Email, OTP and password are required"));
-  if (confirmPassword && password !== confirmPassword) {
+  }
+
+  if (password !== confirmPassword) {
     return next(new AppError(400, "Passwords do not match"));
   }
 
@@ -297,25 +322,27 @@ export const resetPassword = catchAsync(async (req, res, next) => {
   if (!user) return next(new AppError(404, "User not found"));
 
   if (
-    user.otp?.purpose !== "reset_password" ||
     !user.otp?.hash ||
+    user.otp.purpose !== "reset_password" ||
     isOtpExpired(user.otp.expiresAt)
   ) {
     return next(new AppError(400, "OTP is invalid or expired"));
   }
 
-  if (user.otp.attempts >= 5)
+  if (user.otp.attempts >= 5) {
     return next(new AppError(429, "Too many attempts. Request a new OTP."));
+  }
 
-  const ok = hashOTP(otp) === user.otp.hash;
+  const isValid = hashOTP(otp) === user.otp.hash;
   user.otp.attempts += 1;
 
-  if (!ok) {
+  if (!isValid) {
     await user.save();
     return next(new AppError(400, "Invalid OTP"));
   }
 
   user.password = password;
+
   user.otp = {
     hash: "",
     expiresAt: null,
@@ -335,21 +362,20 @@ export const resetPassword = catchAsync(async (req, res, next) => {
 });
 
 export const verifyOTP = catchAsync(async (req, res, next) => {
-  const { email, otp, purpose } = req.body; // "verify_email" | "reset_password"
+  const { email, otp, purpose } = req.body;
 
   if (!email || !otp || !purpose) {
-    return next(new AppError(400, "Email, OTP, and purpose are required"));
+    return next(new AppError(400, "Email, OTP and purpose are required"));
   }
 
   const user = await User.findOne({ email });
   if (!user) return next(new AppError(404, "User not found"));
 
-  // must match purpose
-  if (user.otp?.purpose !== purpose) {
-    return next(new AppError(400, "OTP purpose mismatch. Request a new OTP."));
-  }
-
-  if (!user.otp?.hash || isOtpExpired(user.otp.expiresAt)) {
+  if (
+    !user.otp?.hash ||
+    user.otp.purpose !== purpose ||
+    isOtpExpired(user.otp.expiresAt)
+  ) {
     return next(new AppError(400, "Invalid or expired OTP"));
   }
 
@@ -357,10 +383,10 @@ export const verifyOTP = catchAsync(async (req, res, next) => {
     return next(new AppError(429, "Too many attempts. Request a new OTP."));
   }
 
-  const ok = hashOTP(otp) === user.otp.hash;
+  const isValid = hashOTP(otp) === user.otp.hash;
   user.otp.attempts += 1;
 
-  if (!ok) {
+  if (!isValid) {
     await user.save();
     return next(new AppError(400, "Invalid OTP"));
   }
@@ -369,20 +395,15 @@ export const verifyOTP = catchAsync(async (req, res, next) => {
     user.isEmailVerified = true;
   }
 
-  user.otp = {
-    hash: "",
-    expiresAt: null,
-    purpose: null,
-    attempts: 0,
-    lastSentAt: null,
-  };
   await user.save();
 
   sendResponse(res, {
     statusCode: 200,
     success: true,
     message:
-      purpose === "verify_email" ? "Email OTP verified" : "Reset OTP verified",
+      purpose === "verify_email"
+        ? "Email verified successfully"
+        : "OTP verified successfully",
     data: { email },
   });
 });
@@ -392,13 +413,13 @@ export const changePassword = catchAsync(async (req, res) => {
   if (!oldPassword || !newPassword) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      "Old password and new password are required"
+      "Old password and new password are required",
     );
   }
   if (oldPassword === newPassword) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      "Old password and new password cannot be same"
+      "Old password and new password cannot be same",
     );
   }
   const user = await User.findById({ _id: req.user?._id });
@@ -437,13 +458,13 @@ export const refreshToken = catchAsync(async (req, res) => {
   const accessToken = createToken(
     jwtPayload,
     process.env.JWT_ACCESS_SECRET,
-    process.env.JWT_ACCESS_EXPIRES_IN
+    process.env.JWT_ACCESS_EXPIRES_IN,
   );
 
   const refreshToken1 = createToken(
     jwtPayload,
     process.env.JWT_REFRESH_SECRET,
-    process.env.JWT_REFRESH_EXPIRES_IN
+    process.env.JWT_REFRESH_EXPIRES_IN,
   );
   user.refreshToken = refreshToken1;
   await user.save();
@@ -461,7 +482,7 @@ export const logout = catchAsync(async (req, res) => {
   const user1 = await User.findByIdAndUpdate(
     user,
     { refreshToken: "" },
-    { new: true }
+    { new: true },
   );
   sendResponse(res, {
     statusCode: httpStatus.OK,

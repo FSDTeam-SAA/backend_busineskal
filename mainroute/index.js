@@ -10,7 +10,6 @@ import orderRoute from "../route/order.route.js";
 import paymentRoute from "../route/payment.route.js";
 import addressRoute from "../route/address.route.js";
 import couponRoute from "../route/coupon.route.js";
-import vendorRoute from "../route/vendor.route.js";
 import contactUsRoute from "../route/contactUs.route.js";
 import reviewsRoute from "../route/review.route.js";
 
@@ -27,7 +26,6 @@ router.use("/order", orderRoute);
 router.use("/payment", paymentRoute);
 router.use("/address", addressRoute);
 router.use("/coupon", couponRoute);
-router.use("/vendor", vendorRoute);
 router.use("/contact-us", contactUsRoute);
 router.use("/reviews", reviewsRoute);
 

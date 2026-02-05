@@ -5,7 +5,9 @@ import {
   getProductById,
   updateProduct,
   deleteProduct,
-  verifyProduct,
+  updateProductVerification,
+  getPendingProducts,
+  getMyProducts,
 } from "../controller/product.controller.js";
 import { protect } from "../middleware/auth.middleware.js";
 import upload from "../middleware/multer.middleware.js";
@@ -15,8 +17,14 @@ router.post(
   "/add",
   protect,
   upload.fields([{ name: "photos", maxCount: 10 }]),
-  addProduct
+  addProduct,
 );
+
+router.get("/my", protect, getMyProducts);
+
+router.get("/pending", protect, getPendingProducts);
+router.patch("/:productId/verify", protect, updateProductVerification);
+protect;
 
 router.get("/", protect, getProducts);
 router.get("/:id", protect, getProductById);
@@ -24,9 +32,8 @@ router.put(
   "/:id",
   protect,
   upload.fields([{ name: "photos", maxCount: 10 }]),
-  updateProduct
+  updateProduct,
 );
 router.delete("/:id", protect, deleteProduct);
-router.patch("/:id/verify", protect, verifyProduct);
 
 export default router;

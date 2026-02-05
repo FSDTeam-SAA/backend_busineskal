@@ -7,7 +7,7 @@ import catchAsync from "../utils/catchAsync.js";
 
 export const getProfile = catchAsync(async (req, res) => {
   const user = await User.findById(req.user._id).select(
-    "-password -refreshToken -verificationInfo -password_reset_token"
+    "-password -refreshToken -verificationInfo -password_reset_token",
   );
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -61,5 +61,61 @@ export const changePassword = catchAsync(async (req, res) => {
     statusCode: httpStatus.OK,
     success: true,
     message: "Password changed",
+  });
+});
+
+export const getAllManagers = catchAsync(async (req, res) => {
+  const managers = await User.find({ role: "seller" }).select(
+    "-password -refreshToken",
+  );
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Managers fetched successfully",
+    data: managers,
+  });
+});
+
+export const getPendingManagers = catchAsync(async (req, res) => {
+  const managers = await User.find({
+    role: "seller",
+    vendorStatus: "pending",
+  }).select("-password -refreshToken");
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Pending seller requests fetched",
+    data: managers,
+  });
+});
+
+export const updateManagerStatus = catchAsync(async (req, res) => {
+  const { userId } = req.params;
+  const { status } = req.body; // approved | rejected
+
+  if (!["approved", "rejected"].includes(status)) {
+    return next(new AppError(400, "Invalid status value"));
+  }
+
+  const user = await User.findById(userId);
+  if (!user) return next(new AppError(404, "User not found"));
+
+  if (user.role !== "seller") {
+    return next(new AppError(400, "User is not a seller"));
+  }
+
+  user.vendorStatus = status;
+  await user.save();
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: `seller ${status} successfully`,
+    data: {
+      _id: user._id,
+      managerStatus: user.vendorStatus,
+    },
   });
 });

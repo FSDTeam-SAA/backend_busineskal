@@ -1,5 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import bcrypt from "bcryptjs";
+import { raw } from "express";
 
 const userSchema = new Schema(
   {
@@ -72,19 +73,6 @@ const userSchema = new Schema(
       type: String,
       default: "en",
     },
-
-    role: {
-      type: String,
-      enum: ["user", "admin", "manager"],
-      default: "user",
-    },
-    verificationInfo: {
-      verified: { type: Boolean, default: false },
-      token: { type: String, default: "" },
-    },
-    password_reset_token: { type: String, default: "" },
-    refreshToken: { type: String, default: "" },
-    isEmailVerified: { type: Boolean, default: false },
     otp: {
       hash: { type: String, default: "" },
       expiresAt: { type: Date, default: null },
@@ -96,6 +84,20 @@ const userSchema = new Schema(
       attempts: { type: Number, default: 0 },
       lastSentAt: { type: Date, default: null },
     },
+
+    role: {
+      type: String,
+      enum: ["user", "admin", "seller"],
+      default: "user",
+    },
+    verificationInfo: {
+      verified: { type: Boolean, default: false },
+      token: { type: String, default: "" },
+    },
+    password_reset_token: { type: String, default: "" },
+    refreshToken: { type: String, default: "" },
+    isEmailVerified: { type: Boolean, default: false },
+
     review: [
       {
         rating: {
@@ -114,13 +116,18 @@ const userSchema = new Schema(
       },
     ],
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 userSchema.pre("save", async function (next) {
   if (this.isModified("password")) {
     const saltRounds = Number(process.env.bcrypt_salt_round) || 10;
     this.password = await bcrypt.hash(this.password, saltRounds);
+  }
+
+  // seller role enforcement
+  if (this.isModified("role") && this.role === "seller") {
+    this.managerStatus = "pending";
   }
 
   next();
@@ -137,7 +144,7 @@ userSchema.statics.isOTPVerified = async function (id) {
 
 userSchema.statics.isPasswordMatched = async function (
   plainTextPassword,
-  hashPassword
+  hashPassword,
 ) {
   return await bcrypt.compare(plainTextPassword, hashPassword);
 };
