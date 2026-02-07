@@ -12,6 +12,7 @@ import addressRoute from "../route/address.route.js";
 import couponRoute from "../route/coupon.route.js";
 import contactUsRoute from "../route/contactUs.route.js";
 import reviewsRoute from "../route/review.route.js";
+import bannerRoutes from "../route/banner.route.js";
 
 const router = express.Router();
 
@@ -28,5 +29,6 @@ router.use("/address", addressRoute);
 router.use("/coupon", couponRoute);
 router.use("/contact-us", contactUsRoute);
 router.use("/reviews", reviewsRoute);
+router.use("/banner", bannerRoutes);
 
 export default router;

@@ -79,7 +79,10 @@ const userSchema = new Schema(
       attempts: { type: Number, default: 0 },
       lastSentAt: { type: Date, default: null },
     },
-
+    shopId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Shop",
+    },
     role: {
       type: String,
       enum: ["user", "admin", "seller"],

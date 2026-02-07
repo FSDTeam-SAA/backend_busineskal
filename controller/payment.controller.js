@@ -38,6 +38,7 @@ export const createPayment = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Internal server error." });
+    console.log(error);
   }
 };
 
@@ -60,7 +61,7 @@ export const confirmPayment = async (req, res) => {
     if (paymentIntent.status !== "succeeded") {
       await paymentInfo.findOneAndUpdate(
         { transactionId: paymentIntentId },
-        { paymentStatus: "failed" }
+        { paymentStatus: "failed" },
       );
 
       return res.status(400).json({
@@ -73,12 +74,12 @@ export const confirmPayment = async (req, res) => {
     const paymentRecord = await paymentInfo.findOneAndUpdate(
       { transactionId: paymentIntentId },
       { paymentStatus: "complete" },
-      { new: true }
+      { new: true },
     );
 
     if (paymentRecord?.orderId) {
       const order = await Order.findById(paymentRecord.orderId).populate(
-        "product user seller"
+        "product user seller",
       );
 
       await Order.findByIdAndUpdate(paymentRecord.orderId, {

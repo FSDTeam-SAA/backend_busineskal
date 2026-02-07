@@ -4,6 +4,8 @@ import { uploadOnCloudinary } from "../utils/commonMethod.js";
 import AppError from "../errors/AppError.js";
 import sendResponse from "../utils/sendResponse.js";
 import catchAsync from "../utils/catchAsync.js";
+import { Shop } from "../model/shop.model.js";
+import { Product } from "../model/product.model.js";
 
 export const getProfile = catchAsync(async (req, res) => {
   const user = await User.findById(req.user._id).select(
@@ -64,7 +66,7 @@ export const changePassword = catchAsync(async (req, res) => {
   });
 });
 
-export const getAllManagers = catchAsync(async (req, res) => {
+export const getAllSellers = catchAsync(async (req, res) => {
   const managers = await User.find({ role: "seller" }).select(
     "-password -refreshToken",
   );
@@ -77,7 +79,7 @@ export const getAllManagers = catchAsync(async (req, res) => {
   });
 });
 
-export const getPendingManagers = catchAsync(async (req, res) => {
+export const getPendingSellers = catchAsync(async (req, res) => {
   const managers = await User.find({
     role: "seller",
     vendorStatus: "pending",
@@ -91,7 +93,7 @@ export const getPendingManagers = catchAsync(async (req, res) => {
   });
 });
 
-export const updateManagerStatus = catchAsync(async (req, res) => {
+export const updateSellersStatus = catchAsync(async (req, res) => {
   const { userId } = req.params;
   const { status } = req.body; // approved | rejected
 
@@ -107,6 +109,19 @@ export const updateManagerStatus = catchAsync(async (req, res) => {
   }
 
   user.vendorStatus = status;
+
+  const shop = await Shop.create({
+    name: "",
+    description: "",
+    banner: "",
+    certificate: "",
+    address: "",
+    owner: user._id,
+    products: [],
+  });
+
+  user.shopId = shop._id;
+
   await user.save();
 
   sendResponse(res, {
@@ -117,5 +132,30 @@ export const updateManagerStatus = catchAsync(async (req, res) => {
       _id: user._id,
       managerStatus: user.vendorStatus,
     },
+  });
+});
+
+export const deleteSeller = catchAsync(async (req, res) => {
+  const { userId } = req.params;
+
+  const user = await User.findById(userId);
+  if (!user) return next(new AppError(404, "User not found"));
+
+  if (user.role !== "seller") {
+    return next(new AppError(400, "User is not a seller"));
+  }
+
+  const shop = await Shop.findById(user.shopId);
+  if (shop) await shop.deleteOne();
+
+  const products = await Product.find({ vendor: user._id });
+  if (products) await Product.deleteMany({ vendor: user._id });
+
+  await user.deleteOne();
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Seller deleted successfully",
   });
 });

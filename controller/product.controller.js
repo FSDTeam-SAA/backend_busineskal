@@ -6,6 +6,7 @@ import AppError from "../errors/AppError.js";
 import sendResponse from "../utils/sendResponse.js";
 import catchAsync from "../utils/catchAsync.js";
 import { User } from "../model/user.model.js";
+import { Shop } from "../model/shop.model.js";
 
 export const addProduct = catchAsync(async (req, res) => {
   const {
@@ -14,6 +15,7 @@ export const addProduct = catchAsync(async (req, res) => {
     price,
     colors,
     category,
+    shopId,
     sku,
     stock,
     country,
@@ -68,6 +70,10 @@ export const addProduct = catchAsync(async (req, res) => {
     stock: stock ? parseInt(stock) : 0,
   });
 
+  await Shop.findByIdAndUpdate(shopId, {
+    $push: { products: product._id },
+  });
+
   sendResponse(res, {
     statusCode: httpStatus.CREATED,
     success: true,
@@ -84,6 +90,7 @@ export const updateProduct = catchAsync(async (req, res) => {
     price,
     colors,
     category,
+    shopId,
     sku,
     stock,
   } = req.body;
@@ -142,6 +149,9 @@ export const updateProduct = catchAsync(async (req, res) => {
     .populate("category", "name path")
     .populate("vendor", "name storeName");
 
+  await Shop.findByIdAndUpdate(shopId, {
+    $push: { products: product._id },
+  });
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,

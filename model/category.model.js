@@ -35,8 +35,12 @@ const categorySchema = new Schema(
       type: String,
       default: "",
     },
+    color: {
+      type: String,
+      default: "",
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 export const Category = mongoose.model("Category", categorySchema);

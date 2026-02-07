@@ -7,7 +7,7 @@ import AppError from "../errors/AppError.js";
 import { Product } from "../model/product.model.js";
 
 export const addCategory = catchAsync(async (req, res) => {
-  const { name, parent } = req.body;
+  const { name, parent, color } = req.body;
 
   // Check if category already exists
   const existingCategory = await Category.findOne({ name });
@@ -23,6 +23,7 @@ export const addCategory = catchAsync(async (req, res) => {
 
   const category = await Category.create({
     name,
+    color,
     parent: parent || null,
     image,
   });
@@ -76,7 +77,7 @@ export const getCategories = catchAsync(async (req, res) => {
           associatedProducts,
           productCount,
         };
-      })
+      }),
     );
 
     return sendResponse(res, {
@@ -96,7 +97,7 @@ export const getCategories = catchAsync(async (req, res) => {
 });
 
 export const updateCategory = catchAsync(async (req, res) => {
-  const { name, parent } = req.body;
+  const { name, parent, color } = req.body;
 
   const category = await Category.findById(req.params.id);
   if (!category) {
@@ -129,8 +130,12 @@ export const updateCategory = catchAsync(async (req, res) => {
   const updatedCategory = await Category.findByIdAndUpdate(
     req.params.id,
     updates,
-    { new: true, runValidators: true }
+    { new: true, runValidators: true },
   ).populate("children", "name image");
+
+  if (color) {
+    updatedCategory.color = color;
+  }
 
   // Re-save to update level and path
   await updatedCategory.save();
@@ -155,7 +160,7 @@ export const deleteCategory = catchAsync(async (req, res) => {
   if (productCount > 0) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Cannot delete category with ${productCount} products. Move products first.`
+      `Cannot delete category with ${productCount} products. Move products first.`,
     );
   }
 
@@ -164,7 +169,7 @@ export const deleteCategory = catchAsync(async (req, res) => {
   if (childCount > 0) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Cannot delete category with ${childCount} subcategories. Delete subcategories first.`
+      `Cannot delete category with ${childCount} subcategories. Delete subcategories first.`,
     );
   }
 
@@ -211,7 +216,7 @@ export const getCategoryTree = catchAsync(async (req, res) => {
           productCount,
           children: children.length > 0 ? children : undefined,
         };
-      })
+      }),
     );
 
     return tree;

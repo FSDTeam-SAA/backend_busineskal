@@ -7,13 +7,14 @@ import { nanoid } from "nanoid";
 import { Product } from "../model/product.model.js";
 
 export const createOrder = catchAsync(async (req, res) => {
-  const { items, address, coupon } = req.body;
+  const { items, address } = req.body;
   const customer = req.user._id;
 
   let totalAmount = 0;
   const orderItems = [];
   for (let item of items) {
-    const product = await Product.findById(item.product);
+    const product = await Product.findById(item.product.toString());
+
     if (!product || product.stock < item.quantity) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
@@ -33,24 +34,15 @@ export const createOrder = catchAsync(async (req, res) => {
     await product.save();
   }
 
-  let discount = 0;
-  if (coupon) {
-    // Validate coupon logic here
-    discount = totalAmount * 0.2;
-    totalAmount -= discount;
-  }
-
   const orderId = `ORD${nanoid(6)}`;
 
   const order = await OrderModel.create({
     orderId,
     items: orderItems,
     totalAmount,
-    discount,
     customer,
     vendor: orderItems[0].vendor,
     address,
-    coupon,
     expectedDeliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   });
 
@@ -96,8 +88,6 @@ export const getOrderById = catchAsync(async (req, res) => {
     .populate("customer", "name email")
     .populate("vendor", "name storeName");
 
-  console.log(order);
-  console.log(req.user._id);
   if (!order) throw new AppError(httpStatus.NOT_FOUND, "Order not found");
 
   // Role check for access
@@ -106,10 +96,9 @@ export const getOrderById = catchAsync(async (req, res) => {
     order.customer._id.toString() !== req.user._id.toString()
   ) {
     throw new AppError(httpStatus.FORBIDDEN, "Access denied");
-  }
-  if (
+  } else if (
     req.user.role === "seller" &&
-    order.vendor.toString() !== req.user._id.toString()
+    order.vendor._id.toString() !== req.user._id.toString()
   ) {
     throw new AppError(httpStatus.FORBIDDEN, "Access denied");
   }
@@ -146,5 +135,22 @@ export const updateOrderStatus = catchAsync(async (req, res) => {
     success: true,
     message: "Order status updated",
     data: order,
+  });
+});
+
+export const getMyOrders = catchAsync(async (req, res) => {
+  const orders = await OrderModel.find({
+    customer: req.user._id,
+    status: { $in: ["in_progress", "shipped", "delivered"] },
+  })
+    .populate("items.product", "title price photos")
+    .populate("customer", "name email")
+    .populate("vendor", "name storeName");
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Orders fetched",
+    data: orders,
   });
 });
