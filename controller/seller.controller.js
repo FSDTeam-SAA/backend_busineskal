@@ -229,7 +229,7 @@ export const getSellerSalesHistory = catchAsync(async (req, res, next) => {
         adminCharge: adminCharge.toFixed(2),
         myRevenue: myRevenue.toFixed(2),
         customer: order.customer
-          ? `${order.customer.firstName} ${order.customer.lastName}`
+          ? `${order?.customer?.firstName} ${order?.customer?.lastName}`
           : "N/A",
       };
     }),

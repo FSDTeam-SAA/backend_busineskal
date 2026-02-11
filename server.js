@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
 import router from "./mainroute/index.js";
 import { createServer } from "http";
-import { Server } from "socket.io";
+import { initSocket } from "./utils/socket.js";
 
 import globalErrorHandler from "./middleware/globalErrorHandler.js";
 import notFound from "./middleware/notFound.js";
@@ -15,12 +15,7 @@ const app = express();
 app.set("trust proxy", true);
 
 const server = createServer(app);
-export const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
-});
+export const io = initSocket(server);
 
 app.use(
   cors({

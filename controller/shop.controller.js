@@ -5,6 +5,36 @@ import sendResponse from "../utils/sendResponse.js";
 import catchAsync from "../utils/catchAsync.js";
 import { Shop } from "../model/shop.model.js";
 
+const applyShopUpdates = async (shop, req) => {
+  const { name, description, address } = req.body;
+
+  if (name) shop.name = name;
+  if (description) shop.description = description;
+  if (address) shop.address = address;
+
+  const banner = {};
+  const certificate = {};
+
+  if (req.files?.banner?.[0]) {
+    const { public_id, secure_url, url } = await uploadOnCloudinary(
+      req.files.banner[0].buffer,
+    );
+    banner.public_id = public_id;
+    banner.url = secure_url || url;
+  }
+
+  if (req.files?.certificate?.[0]) {
+    const { public_id, secure_url, url } = await uploadOnCloudinary(
+      req.files.certificate[0].buffer,
+    );
+    certificate.public_id = public_id;
+    certificate.url = secure_url || url;
+  }
+
+  if (Object.keys(banner).length > 0) shop.banner = banner;
+  if (Object.keys(certificate).length > 0) shop.certificate = certificate;
+};
+
 export const getShops = catchAsync(async (req, res) => {
   const shops = await Shop.find();
   sendResponse(res, {
@@ -27,46 +57,67 @@ export const getShopById = catchAsync(async (req, res) => {
 });
 
 export const updateShop = catchAsync(async (req, res) => {
-  const { name, description, address } = req.body;
   const shopId = req.params.id;
 
   const shop = await Shop.findById(shopId);
+  if (!shop) throw new AppError(httpStatus.NOT_FOUND, "Shop not found");
 
-  if (req.user.role === "seller" && shop.owner.toString() !== req.user._id) {
+  if (
+    req.user.role === "seller" &&
+    shop.owner.toString() !== req.user._id.toString()
+  ) {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      "Cannot update other vendor's shop",
+    );
+  }
+  await applyShopUpdates(shop, req);
+
+  await shop.save();
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Shop updated",
+    data: shop,
+  });
+});
+
+export const getMyShop = catchAsync(async (req, res) => {
+  const shopId = req.user.shopId;
+  const shop = shopId
+    ? await Shop.findById(shopId)
+    : await Shop.findOne({ owner: req.user._id });
+
+  if (!shop) throw new AppError(httpStatus.NOT_FOUND, "Shop not found");
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "My shop fetched",
+    data: shop,
+  });
+});
+
+export const updateMyShop = catchAsync(async (req, res) => {
+  const shopId = req.user.shopId;
+  const shop = shopId
+    ? await Shop.findById(shopId)
+    : await Shop.findOne({ owner: req.user._id });
+
+  if (!shop) throw new AppError(httpStatus.NOT_FOUND, "Shop not found");
+
+  if (
+    req.user.role === "seller" &&
+    shop.owner.toString() !== req.user._id.toString()
+  ) {
     throw new AppError(
       httpStatus.FORBIDDEN,
       "Cannot update other vendor's shop",
     );
   }
 
-  if (!shop) throw new AppError(httpStatus.NOT_FOUND, "Shop not found");
-
-  if (name) shop.name = name;
-  if (description) shop.description = description;
-  if (address) shop.address = address;
-
-  const banner = {};
-  const certificate = {};
-
-  if (req.files.banner) {
-    const { public_id, url } = await uploadOnCloudinary(
-      req.files.banner[0].path,
-    );
-    banner.public_id = public_id;
-    banner.url = url;
-  }
-
-  if (req.files.certificate) {
-    const { public_id, url } = await uploadOnCloudinary(
-      req.files.certificate[0].path,
-    );
-    certificate.public_id = public_id;
-    certificate.url = url;
-  }
-
-  if (Object.keys(banner).length > 0) shop.banner = banner;
-  if (Object.keys(certificate).length > 0) shop.certificate = certificate;
-
+  await applyShopUpdates(shop, req);
   await shop.save();
 
   sendResponse(res, {

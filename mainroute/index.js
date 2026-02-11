@@ -16,6 +16,8 @@ import bannerRoutes from "../route/banner.route.js";
 import subscriptionRoute from "../route/subcription.route.js";
 import adminDashboardRoute from "../route/admin.route.js";
 import sellerDashboardRoute from "../route/seller.route.js";
+import shopRoute from "../route/shop.route.js";
+import chatRoute from "../route/chat.route.js";
 
 const router = express.Router();
 
@@ -36,5 +38,7 @@ router.use("/banner", bannerRoutes);
 router.use("/subscription", subscriptionRoute);
 router.use("/admin/dashboard", adminDashboardRoute);
 router.use("/seller/dashboard", sellerDashboardRoute);
+router.use("/shop", shopRoute);
+router.use("/chat", chatRoute);
 
 export default router;

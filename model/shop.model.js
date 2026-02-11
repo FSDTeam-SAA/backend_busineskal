@@ -3,11 +3,11 @@ import { Schema, model } from "mongoose";
 const shopSchema = new Schema({
   name: {
     type: String,
-    required: true,
+    
   },
   description: {
     type: String,
-    required: true,
+    
   },
   certificate: {
     public_id: { type: String, default: "" },
@@ -19,7 +19,7 @@ const shopSchema = new Schema({
   },
   address: {
     type: String,
-    required: true,
+    
   },
   products: [
     {

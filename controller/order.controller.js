@@ -93,7 +93,7 @@ export const getOrderById = catchAsync(async (req, res) => {
   // Role check for access
   if (
     req.user.role === "user" &&
-    order.customer._id.toString() !== req.user._id.toString()
+    order?.customer?._id.toString() !== req.user._id.toString()
   ) {
     throw new AppError(httpStatus.FORBIDDEN, "Access denied");
   } else if (

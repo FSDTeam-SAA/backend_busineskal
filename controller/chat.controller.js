@@ -5,7 +5,8 @@ import catchAsync from "../utils/catchAsync.js";
 import httpStatus from "http-status";
 import sendResponse from "../utils/sendResponse.js";
 import { User } from "../model/user.model.js";
-// import { io } from "../server.js";
+import { Order } from "../model/order.model.js";
+import { getIO } from "../utils/socket.js";
 
 export const createChat = catchAsync(async (req, res) => {
   const { sellerId } = req.body;
@@ -64,9 +65,15 @@ export const sendMessage = catchAsync(async (req, res) => {
     .select({ messages: { $slice: -1 } }) // Only include last message
     .populate("messages.user", "name role avatar"); // Populate sender of last message
 
-  // if (chat12.messages[0]) {
-  //     io.to(`chat_${chatId}`).emit("newMassage", chat12.messages[0]);
-  // }
+  if (chat12?.messages?.[0]) {
+    const io = getIO();
+    const payload = {
+      chatId: chat._id,
+      message: chat12.messages[0],
+    };
+    io.to(`chat_${chat.user.toString()}`).emit("newMassage", payload);
+    io.to(`chat_${chat.seller.toString()}`).emit("newMassage", payload);
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -94,7 +101,6 @@ export const updateMessage = catchAsync(async (req, res) => {
   }
 
   message.text = newText;
-  // io.to(`chat_${chatId}`).emit("newMassage", message);
   await chat.save();
 
   sendResponse(res, {
@@ -135,7 +141,7 @@ export const getChatForUser = catchAsync(async (req, res) => {
     .select({ messages: { $slice: -1 } }) // Only include last message
     .populate({
       path: "seller",
-      select: "name avatar",
+      select: "name storeName avatar",
     })
     .populate({
       path: "user",
@@ -155,6 +161,200 @@ export const getChatForUser = catchAsync(async (req, res) => {
     message: "Chat retrieved successfully",
     success: true,
     data: chat,
+  });
+});
+
+const ensureChatsForSellers = async (userId, sellerIds) => {
+  if (!sellerIds.length) return;
+
+  const existingChats = await Chat.find({
+    user: userId,
+    seller: { $in: sellerIds },
+  }).select("seller");
+
+  const existingSellerIds = new Set(
+    existingChats.map((chat) => chat.seller.toString())
+  );
+
+  const missingSellerIds = sellerIds.filter(
+    (sellerId) => !existingSellerIds.has(sellerId.toString())
+  );
+
+  if (missingSellerIds.length === 0) return;
+
+  const sellers = await User.find({ _id: { $in: missingSellerIds } }).select(
+    "name storeName"
+  );
+
+  const newChats = sellers.map((seller) => ({
+    name: seller.storeName || seller.name || "",
+    seller: seller._id,
+    user: userId,
+  }));
+
+  if (newChats.length > 0) {
+    try {
+      await Chat.insertMany(newChats, { ordered: false });
+    } catch (error) {
+      if (error?.code !== 11000) {
+        throw error;
+      }
+    }
+  }
+};
+
+const ensureChatsForCustomers = async (sellerId, customerIds) => {
+  if (!customerIds.length) return;
+
+  const existingChats = await Chat.find({
+    seller: sellerId,
+    user: { $in: customerIds },
+  }).select("user");
+
+  const existingCustomerIds = new Set(
+    existingChats.map((chat) => chat.user.toString())
+  );
+
+  const missingCustomerIds = customerIds.filter(
+    (customerId) => !existingCustomerIds.has(customerId.toString())
+  );
+
+  if (missingCustomerIds.length === 0) return;
+
+  const customers = await User.find({
+    _id: { $in: missingCustomerIds },
+  }).select("name firstName lastName");
+
+  const newChats = customers.map((customer) => {
+    const displayName =
+      customer.name ||
+      [customer.firstName, customer.lastName].filter(Boolean).join(" ");
+
+    return {
+      name: displayName,
+      seller: sellerId,
+      user: customer._id,
+    };
+  });
+
+  if (newChats.length > 0) {
+    try {
+      await Chat.insertMany(newChats, { ordered: false });
+    } catch (error) {
+      if (error?.code !== 11000) {
+        throw error;
+      }
+    }
+  }
+};
+
+export const getMySellersFromOrders = catchAsync(async (req, res) => {
+  if (req.user.role !== "user") {
+    throw new AppError(httpStatus.FORBIDDEN, "Only users can access this");
+  }
+
+  const sellerIds = await Order.distinct("vendor", {
+    customer: req.user._id,
+  });
+
+  await ensureChatsForSellers(req.user._id, sellerIds);
+
+  const chat = await Chat.find({
+    user: req.user._id,
+    seller: { $in: sellerIds },
+  })
+    .select({ messages: { $slice: -1 } })
+    .populate({
+      path: "seller",
+      select: "name storeName avatar",
+    })
+    .populate({
+      path: "user",
+      select: "name avatar",
+    })
+    .populate({
+      path: "messages.user",
+      select: "name avatar",
+    })
+    .populate({
+      path: "messages.productId",
+      select: "name price images",
+    })
+    .sort({ updatedAt: -1 });
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: "My sellers retrieved successfully",
+    success: true,
+    data: chat,
+  });
+});
+
+export const getMyCustomersFromOrders = catchAsync(async (req, res) => {
+  if (req.user.role !== "seller") {
+    throw new AppError(httpStatus.FORBIDDEN, "Only sellers can access this");
+  }
+
+  const customerIds = await Order.distinct("customer", {
+    vendor: req.user._id,
+  });
+
+  await ensureChatsForCustomers(req.user._id, customerIds);
+
+  const chat = await Chat.find({
+    seller: req.user._id,
+    user: { $in: customerIds },
+  })
+    .select({ messages: { $slice: -1 } })
+    .populate({
+      path: "seller",
+      select: "name storeName avatar",
+    })
+    .populate({
+      path: "user",
+      select: "name avatar",
+    })
+    .populate({
+      path: "messages.user",
+      select: "name avatar",
+    })
+    .populate({
+      path: "messages.productId",
+      select: "name price images",
+    })
+    .sort({ updatedAt: -1 });
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: "My customers retrieved successfully",
+    success: true,
+    data: chat,
+  });
+});
+
+export const sendMessageToAllSellers = catchAsync(async (req, res) => {
+  const { message } = req.body;
+
+  if (!message) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Message is required");
+  }
+
+  const sellers = await User.find({ role: "seller" }).select("_id");
+  const io = getIO();
+
+  sellers.forEach((seller) => {
+    io.to(`chat_${seller._id.toString()}`).emit("sellerBroadcast", {
+      message,
+      sender: req.user._id,
+      date: new Date(),
+    });
+  });
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: "Message sent to all sellers",
+    success: true,
+    data: { count: sellers.length },
   });
 });
 

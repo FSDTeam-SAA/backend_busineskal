@@ -93,7 +93,7 @@ export const getPendingSellers = catchAsync(async (req, res) => {
   });
 });
 
-export const updateSellersStatus = catchAsync(async (req, res) => {
+export const updateSellersStatus = catchAsync(async (req, res, next) => {
   const { userId } = req.params;
   const { status } = req.body; // approved | rejected
 
@@ -135,7 +135,7 @@ export const updateSellersStatus = catchAsync(async (req, res) => {
   });
 });
 
-export const deleteSeller = catchAsync(async (req, res) => {
+export const deleteSeller = catchAsync(async (req, res, next) => {
   const { userId } = req.params;
 
   const user = await User.findById(userId);
