@@ -15,6 +15,7 @@ export const addProduct = catchAsync(async (req, res) => {
     price,
     colors,
     category,
+    subcategory,
     shopId,
     sku,
     stock,
@@ -36,8 +37,11 @@ export const addProduct = catchAsync(async (req, res) => {
     );
   }
 
+  // Prefer subcategory when provided
+  const categoryId = subcategory || category;
+
   // Validate category (must be leaf)
-  const cat = await Category.findById(category);
+  const cat = await Category.findById(categoryId);
   if (!cat) {
     throw new AppError(httpStatus.BAD_REQUEST, "Invalid category");
   }
@@ -63,7 +67,13 @@ export const addProduct = catchAsync(async (req, res) => {
     }
   }
 
-  const thumbnail = photos.length > 0 ? photos[0].url : null;
+  let thumbnail = null;
+  if (req.files && req.files.thumbnail && req.files.thumbnail[0]) {
+    const upload = await uploadOnCloudinary(req.files.thumbnail[0].buffer);
+    thumbnail = upload.secure_url;
+  } else if (photos.length > 0) {
+    thumbnail = photos[0].url;
+  }
 
   const product = await Product.create({
     title,
@@ -71,7 +81,7 @@ export const addProduct = catchAsync(async (req, res) => {
     price: parseFloat(price),
     colors: colors ? colors.split(",").map((color) => color.trim()) : [],
     photos,
-    category,
+    category: categoryId,
     country,
     vendor,
     shopId,
@@ -101,8 +111,10 @@ export const updateProduct = catchAsync(async (req, res) => {
     price,
     colors,
     category,
+    subcategory,
     sku,
     stock,
+    country,
   } = req.body;
 
   const product = await Product.findById(req.params.id);
@@ -121,10 +133,12 @@ export const updateProduct = catchAsync(async (req, res) => {
       "Cannot update other vendor's product",
     );
   }
+  const categoryId = subcategory || category;
+
 
   // If category updated → validate leaf
-  if (category) {
-    const cat = await Category.findById(category);
+  if (categoryId) {
+    const cat = await Category.findById(categoryId);
 
     if (!cat) {
       throw new AppError(httpStatus.BAD_REQUEST, "Invalid category");
@@ -152,6 +166,12 @@ export const updateProduct = catchAsync(async (req, res) => {
     }
   }
 
+  let thumbnail = product.thumbnail;
+  if (req.files && req.files.thumbnail && req.files.thumbnail[0]) {
+    const upload = await uploadOnCloudinary(req.files.thumbnail[0].buffer);
+    thumbnail = upload.secure_url;
+  }
+
   const updates = {
     title: title ?? product.title,
     description: description ?? product.description,
@@ -160,10 +180,12 @@ export const updateProduct = catchAsync(async (req, res) => {
     colors: colors
       ? colors.split(",").map((color) => color.trim())
       : product.colors,
-    category: category ?? product.category,
+    category: categoryId ?? product.category,
     sku: sku ?? product.sku,
     stock: stock ? parseInt(stock) : product.stock,
+    country: country ?? product.country,
     photos,
+    thumbnail,
   };
 
   const updatedProduct = await Product.findByIdAndUpdate(
