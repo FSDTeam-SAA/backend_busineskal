@@ -88,9 +88,16 @@ export const updateShop = catchAsync(async (req, res) => {
 
 export const getMyShop = catchAsync(async (req, res) => {
   const shopId = req.user.shopId;
+
   const shop = shopId
-    ? await Shop.findById(shopId)
-    : await Shop.findOne({ owner: req.user._id });
+    ? await Shop.findById(shopId).populate(
+        "products",
+        "title price photos rating reviewsCount verified thumbnail",
+      )
+    : await Shop.findOne({ owner: req.user._id }).populate(
+        "products",
+        "title price photos rating reviewsCount verified thumbnail",
+      );
 
   if (!shop) throw new AppError(httpStatus.NOT_FOUND, "Shop not found");
 

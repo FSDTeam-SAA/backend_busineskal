@@ -125,6 +125,7 @@ export const login = catchAsync(async (req, res, next) => {
       email: user.email,
       role: user.role,
       _id: user._id,
+      shopId: user.shopId,
     },
   });
 });
