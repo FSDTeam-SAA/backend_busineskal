@@ -71,6 +71,11 @@ const productSchema = new Schema(
       min: [0, "Rating cannot be negative"],
       max: [5, "Rating cannot exceed 5"],
     },
+    shopId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Shop",
+      required: true,
+    },
     country: {
       type: String,
       default: "",
@@ -99,6 +104,5 @@ productSchema.pre("save", function (next) {
 
 productSchema.index({ verified: 1, category: 1, price: 1 });
 productSchema.index({ vendor: 1 });
-
 
 export const Product = mongoose.model("Product", productSchema);

@@ -65,6 +65,7 @@ export const addProduct = catchAsync(async (req, res) => {
     category,
     country,
     vendor,
+    shopId,
     sku,
     thumbnail,
     stock: stock ? parseInt(stock) : 0,
@@ -239,6 +240,7 @@ export const getProducts = catchAsync(async (req, res) => {
   const products = await Product.find(query)
     .populate("category", "name")
     .populate("vendor", "name storeName")
+    .populate("shopId", "name description shopStatus")
     .limit(limitNum)
     .skip((pageNum - 1) * limitNum)
     .sort(sortObj);

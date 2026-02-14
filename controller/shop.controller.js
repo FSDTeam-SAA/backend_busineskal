@@ -46,7 +46,10 @@ export const getShops = catchAsync(async (req, res) => {
 });
 
 export const getShopById = catchAsync(async (req, res) => {
-  const shop = await Shop.findById(req.params.id);
+  const shop = await Shop.findById(req.params.id).populate(
+    "products",
+    "title price photos rating reviewsCount verified thumbnail",
+  );
   if (!shop) throw new AppError(httpStatus.NOT_FOUND, "Shop not found");
   sendResponse(res, {
     statusCode: httpStatus.OK,
