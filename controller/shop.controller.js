@@ -15,12 +15,21 @@ const applyShopUpdates = async (shop, req) => {
   const banner = {};
   const certificate = {};
 
-  if (req.files?.banner?.[0]) {
-    const { public_id, secure_url, url } = await uploadOnCloudinary(
-      req.files.banner[0].buffer,
+  if (req.files?.banner?.length > 0) {
+    const upload = await Promise.all(
+      req.files.banner.map(async (file) => {
+        const { public_id, secure_url, url } = await uploadOnCloudinary(
+          file.buffer,
+        );
+
+        return {
+          public_id,
+          url: secure_url || url,
+        };
+      }),
     );
-    banner.public_id = public_id;
-    banner.url = secure_url || url;
+
+    shop.banner = upload;
   }
 
   if (req.files?.certificate?.[0]) {
