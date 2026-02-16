@@ -49,7 +49,7 @@ export const addToCart = catchAsync(async (req, res) => {
 export const getCart = catchAsync(async (req, res) => {
   const cart = await CartModel.findOne({ user: req.user._id }).populate(
     "items.product",
-    "title price photos stock"
+    "title price photos stock thumbnail"
   );
 
   sendResponse(res, {
