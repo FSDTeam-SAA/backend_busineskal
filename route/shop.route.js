@@ -16,7 +16,7 @@ router.get("/:id", getShopById);
 router.put(
   "/update-shop",
   upload.fields([
-    { name: "banner", maxCount: 1 },
+    { name: "banner", maxCount: 3 },
     { name: "certificate", maxCount: 1 },
   ]),
   updateMyShop,

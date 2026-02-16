@@ -15,11 +15,13 @@ export const addProduct = catchAsync(async (req, res) => {
     price,
     colors,
     category,
+    subcategory,
     shopId,
     sku,
     stock,
     country,
   } = req.body;
+
   const vendor = req.user._id;
 
   // Validate vendor
@@ -31,22 +33,33 @@ export const addProduct = catchAsync(async (req, res) => {
   ) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      "Only sellers and admins with approved vendor status can add products",
+      "Only approved sellers or admins can add products",
     );
   }
 
-  // Validate category
-  const cat = await Category.findById(category);
+  // Prefer subcategory when provided
+  const categoryId = subcategory || category;
+
+  // Validate category (must be leaf)
+  const cat = await Category.findById(categoryId);
   if (!cat) {
     throw new AppError(httpStatus.BAD_REQUEST, "Invalid category");
   }
 
-  // Handle file uploads - FIXED
+  if (cat.children && cat.children.length > 0) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "Please select a sub-category (leaf category)",
+    );
+  }
+
+  // Handle file uploads
   const photos = [];
+
   if (req.files && req.files.photos) {
-    // req.files.photos is an array of files from the "photos" field
     for (let file of req.files.photos) {
       const upload = await uploadOnCloudinary(file.buffer);
+
       photos.push({
         public_id: upload.public_id,
         url: upload.secure_url,
@@ -54,7 +67,13 @@ export const addProduct = catchAsync(async (req, res) => {
     }
   }
 
-  const thumbnail = photos.length > 0 ? photos[0].url : null;
+  let thumbnail = null;
+  if (req.files && req.files.thumbnail && req.files.thumbnail[0]) {
+    const upload = await uploadOnCloudinary(req.files.thumbnail[0].buffer);
+    thumbnail = upload.secure_url;
+  } else if (photos.length > 0) {
+    thumbnail = photos[0].url;
+  }
 
   const product = await Product.create({
     title,
@@ -62,7 +81,7 @@ export const addProduct = catchAsync(async (req, res) => {
     price: parseFloat(price),
     colors: colors ? colors.split(",").map((color) => color.trim()) : [],
     photos,
-    category,
+    category: categoryId,
     country,
     vendor,
     shopId,
@@ -71,8 +90,9 @@ export const addProduct = catchAsync(async (req, res) => {
     stock: stock ? parseInt(stock) : 0,
   });
 
+  // Push product to shop
   await Shop.findByIdAndUpdate(shopId, {
-    $push: { products: product._id },
+    $addToSet: { products: product._id },
   });
 
   sendResponse(res, {
@@ -91,17 +111,19 @@ export const updateProduct = catchAsync(async (req, res) => {
     price,
     colors,
     category,
-    shopId,
+    subcategory,
     sku,
     stock,
+    country,
   } = req.body;
 
   const product = await Product.findById(req.params.id);
+
   if (!product) {
     throw new AppError(httpStatus.NOT_FOUND, "Product not found");
   }
 
-  // Authorization check
+  // Authorization
   if (
     req.user.role === "seller" &&
     product.vendor.toString() !== req.user._id.toString()
@@ -111,13 +133,32 @@ export const updateProduct = catchAsync(async (req, res) => {
       "Cannot update other vendor's product",
     );
   }
+  const categoryId = subcategory || category;
 
-  // Handle file uploads - FIXED
-  let photos = product.photos; // Keep existing photos
+
+  // If category updated → validate leaf
+  if (categoryId) {
+    const cat = await Category.findById(categoryId);
+
+    if (!cat) {
+      throw new AppError(httpStatus.BAD_REQUEST, "Invalid category");
+    }
+
+    if (cat.children && cat.children.length > 0) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        "Please select a sub-category (leaf category)",
+      );
+    }
+  }
+
+  // Handle new images
+  let photos = product.photos;
+
   if (req.files && req.files.photos) {
-    // Add new photos to existing ones
     for (let file of req.files.photos) {
       const upload = await uploadOnCloudinary(file.buffer);
+
       photos.push({
         public_id: upload.public_id,
         url: upload.secure_url,
@@ -125,34 +166,37 @@ export const updateProduct = catchAsync(async (req, res) => {
     }
   }
 
+  let thumbnail = product.thumbnail;
+  if (req.files && req.files.thumbnail && req.files.thumbnail[0]) {
+    const upload = await uploadOnCloudinary(req.files.thumbnail[0].buffer);
+    thumbnail = upload.secure_url;
+  }
+
   const updates = {
-    title,
-    description,
-    detailedDescription,
+    title: title ?? product.title,
+    description: description ?? product.description,
+    detailedDescription: detailedDescription ?? product.detailedDescription,
     price: price ? parseFloat(price) : product.price,
     colors: colors
       ? colors.split(",").map((color) => color.trim())
       : product.colors,
-    category: category || product.category,
-    sku: sku || product.sku,
+    category: categoryId ?? product.category,
+    sku: sku ?? product.sku,
     stock: stock ? parseInt(stock) : product.stock,
+    country: country ?? product.country,
     photos,
+    thumbnail,
   };
 
   const updatedProduct = await Product.findByIdAndUpdate(
     req.params.id,
     updates,
-    {
-      new: true,
-      runValidators: true,
-    },
+    { new: true, runValidators: true },
   )
     .populate("category", "name path")
-    .populate("vendor", "name storeName");
+    .populate("vendor", "name storeName")
+    .populate("shopId", "name description shopStatus");
 
-  await Shop.findByIdAndUpdate(shopId, {
-    $push: { products: product._id },
-  });
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
@@ -167,67 +211,78 @@ export const getProducts = catchAsync(async (req, res) => {
     limit = 10,
     category,
     search,
-    user,
-    type, // "popular" | "featured"
+    type,
     minPrice,
     maxPrice,
-    inStock, // "true" | "false"
-    sort, // optional override
+    inStock,
+    sort,
   } = req.query;
 
   const query = {};
 
-  if (category) query.category = category;
-  if (search) query.title = { $regex: search, $options: "i" };
+  // 🔎 Search
+  if (search) {
+    query.title = { $regex: search, $options: "i" };
+  }
 
-  // price filtering
+  // 💰 Price filter
   if (minPrice || maxPrice) {
     query.price = {};
     if (minPrice) query.price.$gte = Number(minPrice);
     if (maxPrice) query.price.$lte = Number(maxPrice);
   }
 
-  // stock filtering
+  // 📦 Stock filter
   if (inStock === "true") query.stock = { $gt: 0 };
   if (inStock === "false") query.stock = 0;
 
-  const ensureInStock = () => {
-    if (inStock !== "false") {
-      if (!query.stock) query.stock = { $gt: 0 };
-      if (typeof query.stock === "number") {
-      } else if (
-        query.stock &&
-        query.stock.$gt === undefined &&
-        query.stock.$gte === undefined
-      ) {
-        query.stock.$gt = 0;
-      }
-    }
-  };
+  // 🏷 Category filter (Hierarchy Support)
+  if (category) {
+    const selectedCategory = await Category.findById(category);
 
+    if (!selectedCategory) {
+      throw new AppError(httpStatus.BAD_REQUEST, "Invalid category");
+    }
+
+    const categories = await Category.find({
+      path: { $regex: `^${selectedCategory.path}` },
+    }).select("_id");
+
+    const categoryIds = categories.map((cat) => cat._id);
+
+    query.category = { $in: categoryIds };
+  }
+
+  // 🌟 Type logic
   if (type === "featured") {
     query.verified = true;
-    ensureInStock();
-
     query.rating = { $gte: 4 };
     query.reviewsCount = { $gte: 1 };
   }
 
   if (type === "popular") {
     query.verified = true;
-    ensureInStock();
-
     query.$or = [{ soldCount: { $gt: 0 } }, { reviewsCount: { $gte: 1 } }];
   }
 
+  // 🔃 Sorting
   let sortObj = { createdAt: -1 };
 
   if (type === "popular") {
-    sortObj = { soldCount: -1, rating: -1, reviewsCount: -1, createdAt: -1 };
+    sortObj = {
+      soldCount: -1,
+      rating: -1,
+      reviewsCount: -1,
+      createdAt: -1,
+    };
   }
 
   if (type === "featured") {
-    sortObj = { rating: -1, reviewsCount: -1, createdAt: -1 };
+    sortObj = {
+      rating: -1,
+      reviewsCount: -1,
+      createdAt: -1,
+    };
   }
 
   if (sort === "price_asc") sortObj = { price: 1 };
@@ -238,7 +293,7 @@ export const getProducts = catchAsync(async (req, res) => {
   const limitNum = Number(limit);
 
   const products = await Product.find(query)
-    .populate("category", "name")
+    .populate("category", "name path")
     .populate("vendor", "name storeName")
     .populate("shopId", "name description shopStatus")
     .limit(limitNum)
@@ -251,7 +306,14 @@ export const getProducts = catchAsync(async (req, res) => {
     statusCode: httpStatus.OK,
     success: true,
     message: "Products fetched",
-    data: { products, pagination: { total, page: pageNum, limit: limitNum } },
+    data: {
+      products,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+      },
+    },
   });
 });
 

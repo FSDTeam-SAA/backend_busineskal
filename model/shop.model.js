@@ -3,23 +3,22 @@ import { Schema, model } from "mongoose";
 const shopSchema = new Schema({
   name: {
     type: String,
-    
   },
   description: {
     type: String,
-    
   },
   certificate: {
     public_id: { type: String, default: "" },
     url: { type: String, default: "" },
   },
-  banner: {
-    public_id: { type: String, default: "" },
-    url: { type: String, default: "" },
-  },
+  banner: [
+    {
+      public_id: { type: String, default: "" },
+      url: { type: String, default: "" },
+    },
+  ],
   address: {
     type: String,
-    
   },
   products: [
     {

@@ -16,7 +16,10 @@ const router = express.Router();
 router.post(
   "/add",
   protect,
-  upload.fields([{ name: "photos", maxCount: 10 }]),
+  upload.fields([
+    { name: "photos", maxCount: 10 },
+    { name: "thumbnail", maxCount: 1 },
+  ]),
   addProduct,
 );
 
@@ -31,7 +34,10 @@ router.get("/:id", protect, getProductById);
 router.put(
   "/:id",
   protect,
-  upload.fields([{ name: "photos", maxCount: 10 }]),
+  upload.fields([
+    { name: "photos", maxCount: 10 },
+    { name: "thumbnail", maxCount: 1 },
+  ]),
   updateProduct,
 );
 router.delete("/:id", protect, deleteProduct);
