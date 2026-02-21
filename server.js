@@ -57,6 +57,20 @@ io.on("connection", (socket) => {
     console.log(`Client ${socket.id} joined alerts room`);
   });
 
+  const relayCallEvent = (event, payload) => {
+    const { toUserId } = payload || {};
+    if (!toUserId) return;
+    io.to(`chat_${toUserId}`).emit(event, payload);
+  };
+
+  socket.on("call:request", (payload) => relayCallEvent("call:request", payload));
+  socket.on("call:answer", (payload) => relayCallEvent("call:answer", payload));
+  socket.on("call:reject", (payload) => relayCallEvent("call:reject", payload));
+  socket.on("call:busy", (payload) => relayCallEvent("call:busy", payload));
+  socket.on("call:ice", (payload) => relayCallEvent("call:ice", payload));
+  socket.on("call:end", (payload) => relayCallEvent("call:end", payload));
+  socket.on("call:signal", (payload) => relayCallEvent("call:signal", payload));
+
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);
   });

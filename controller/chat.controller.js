@@ -7,6 +7,30 @@ import sendResponse from "../utils/sendResponse.js";
 import { User } from "../model/user.model.js";
 import { Order } from "../model/order.model.js";
 import { getIO } from "../utils/socket.js";
+import { uploadOnCloudinary } from "../utils/commonMethod.js";
+
+const toBoolean = (value) => value === true || value === "true";
+
+const deriveMessageType = (attachments = []) => {
+  if (!attachments.length) return "text";
+
+  const allImage = attachments.every((file) =>
+    (file?.mimeType || "").startsWith("image/"),
+  );
+  if (allImage) return "image";
+
+  const allVideo = attachments.every((file) =>
+    (file?.mimeType || "").startsWith("video/"),
+  );
+  if (allVideo) return "video";
+
+  const allAudio = attachments.every((file) =>
+    (file?.mimeType || "").startsWith("audio/"),
+  );
+  if (allAudio) return "audio";
+
+  return "file";
+};
 
 export const createChat = catchAsync(async (req, res) => {
   const { sellerId } = req.body;
@@ -37,6 +61,8 @@ export const createChat = catchAsync(async (req, res) => {
 
 export const sendMessage = catchAsync(async (req, res) => {
   const { chatId, message, askPrice, productId } = req.body;
+  const text = message || req.body?.text || "";
+  const askPriceFlag = toBoolean(askPrice);
   const chat = await Chat.findById(chatId);
   if (!chat) {
     throw new AppError(404, "Chat not found");
@@ -50,10 +76,35 @@ export const sendMessage = catchAsync(async (req, res) => {
       "You are not authorized to send message in this chat"
     );
   }
+  const files = Array.isArray(req.files) ? req.files : [];
+  const attachments = [];
+
+  for (const file of files) {
+    const upload = await uploadOnCloudinary(file.buffer, {
+      resource_type: "auto",
+      folder: "chat",
+    });
+
+    attachments.push({
+      public_id: upload.public_id,
+      url: upload.secure_url,
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+      resourceType: upload.resource_type,
+    });
+  }
+
+  if (!text && attachments.length === 0 && !askPriceFlag && !productId) {
+    throw new AppError(400, "Message or attachment is required");
+  }
+
   const messages = {
-    text: message,
-    askPrice: askPrice,
-    productId: productId,
+    text: text,
+    type: deriveMessageType(attachments),
+    attachments,
+    askPrice: askPriceFlag,
+    productId: productId || undefined,
     user: req.user._id,
     date: new Date(),
     read: false,
