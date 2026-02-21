@@ -67,7 +67,7 @@ export const getOrders = catchAsync(async (req, res) => {
   }
 
   const orders = await OrderModel.find(query)
-    .populate("items.product", "title price photos")
+    .populate("items.product", "title price photos rating")
     .populate("customer", "name email")
     .populate("vendor", "name storeName")
     .limit(limit * 1)
