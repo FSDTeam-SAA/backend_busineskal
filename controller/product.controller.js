@@ -1,12 +1,35 @@
 import httpStatus from "http-status";
 import { Product } from "../model/product.model.js";
 import { Category } from "../model/category.model.js";
-import { uploadOnCloudinary } from "../utils/commonMethod.js";
+import {
+  uploadOnCloudinary,
+  deleteFromCloudinary,
+  extractPublicIdFromCloudinaryUrl,
+} from "../utils/commonMethod.js";
 import AppError from "../errors/AppError.js";
 import sendResponse from "../utils/sendResponse.js";
 import catchAsync from "../utils/catchAsync.js";
 import { User } from "../model/user.model.js";
 import { Shop } from "../model/shop.model.js";
+
+const parseArrayField = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
+
+  return [];
+};
 
 export const addProduct = catchAsync(async (req, res) => {
   const {
@@ -135,8 +158,7 @@ export const updateProduct = catchAsync(async (req, res) => {
   }
   const categoryId = subcategory || category;
 
-
-  // If category updated → validate leaf
+  // If category updated -> validate leaf
   if (categoryId) {
     const cat = await Category.findById(categoryId);
 
@@ -152,8 +174,57 @@ export const updateProduct = catchAsync(async (req, res) => {
     }
   }
 
+  const removedPhotos = parseArrayField(req.body.removedPhotos);
+  const removeThumbnail =
+    req.body.removeThumbnail === "true" || req.body.removeThumbnail === true;
+
+  const removedPhotoPublicIds = new Set();
+  const removedPhotoUrls = new Set();
+
+  for (const item of removedPhotos) {
+    if (!item) continue;
+    const value = String(item);
+
+    if (/^https?:\/\//i.test(value)) {
+      removedPhotoUrls.add(value);
+      const extractedId = extractPublicIdFromCloudinaryUrl(value);
+      if (extractedId) removedPhotoPublicIds.add(extractedId);
+      continue;
+    }
+
+    removedPhotoPublicIds.add(value);
+  }
+
   // Handle new images
-  let photos = product.photos;
+  let photos = Array.isArray(product.photos) ? [...product.photos] : [];
+  const removedPhotoRecords = [];
+  if (removedPhotoPublicIds.size > 0 || removedPhotoUrls.size > 0) {
+    const keptPhotos = [];
+    for (const photo of photos) {
+      let shouldRemove = false;
+
+      if (photo?.public_id && removedPhotoPublicIds.has(photo.public_id)) {
+        shouldRemove = true;
+      }
+      if (photo?.url && removedPhotoUrls.has(photo.url)) {
+        shouldRemove = true;
+      }
+      if (photo?.url) {
+        const extractedId = extractPublicIdFromCloudinaryUrl(photo.url);
+        if (extractedId && removedPhotoPublicIds.has(extractedId)) {
+          shouldRemove = true;
+        }
+      }
+
+      if (shouldRemove) {
+        removedPhotoRecords.push(photo);
+      } else {
+        keptPhotos.push(photo);
+      }
+    }
+
+    photos = keptPhotos;
+  }
 
   if (req.files && req.files.photos) {
     for (let file of req.files.photos) {
@@ -167,9 +238,14 @@ export const updateProduct = catchAsync(async (req, res) => {
   }
 
   let thumbnail = product.thumbnail;
+  let thumbnailToDelete = null;
   if (req.files && req.files.thumbnail && req.files.thumbnail[0]) {
     const upload = await uploadOnCloudinary(req.files.thumbnail[0].buffer);
     thumbnail = upload.secure_url;
+    thumbnailToDelete = extractPublicIdFromCloudinaryUrl(product.thumbnail);
+  } else if (removeThumbnail) {
+    thumbnail = "";
+    thumbnailToDelete = extractPublicIdFromCloudinaryUrl(product.thumbnail);
   }
 
   const updates = {
@@ -196,6 +272,27 @@ export const updateProduct = catchAsync(async (req, res) => {
     .populate("category", "name path")
     .populate("vendor", "name storeName")
     .populate("shopId", "name description shopStatus");
+
+  const cloudinaryIdsToDelete = new Set([...removedPhotoPublicIds]);
+  for (const photo of removedPhotoRecords) {
+    if (photo?.public_id) {
+      cloudinaryIdsToDelete.add(photo.public_id);
+      continue;
+    }
+    if (photo?.url) {
+      const extractedId = extractPublicIdFromCloudinaryUrl(photo.url);
+      if (extractedId) cloudinaryIdsToDelete.add(extractedId);
+    }
+  }
+  if (thumbnailToDelete) cloudinaryIdsToDelete.add(thumbnailToDelete);
+
+  if (cloudinaryIdsToDelete.size > 0) {
+    try {
+      await deleteFromCloudinary([...cloudinaryIdsToDelete]);
+    } catch (error) {
+      console.warn("Cloudinary delete error:", error);
+    }
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -333,7 +430,7 @@ export const getProductById = catchAsync(async (req, res) => {
 });
 
 export const deleteProduct = catchAsync(async (req, res) => {
-  const product = await Product.findByIdAndDelete(req.params.id);
+  const product = await Product.findById(req.params.id);
 
   if (!product) throw new AppError(httpStatus.NOT_FOUND, "Product not found");
   if (
@@ -344,6 +441,33 @@ export const deleteProduct = catchAsync(async (req, res) => {
       httpStatus.FORBIDDEN,
       "Cannot delete other vendor's product",
     );
+  }
+
+  const cloudinaryIdsToDelete = new Set(
+    Array.isArray(product.photos)
+      ? product.photos
+          .map(
+            (photo) =>
+              photo?.public_id ||
+              extractPublicIdFromCloudinaryUrl(photo?.url),
+          )
+          .filter(Boolean)
+      : [],
+  );
+
+  if (product.thumbnail) {
+    const thumbnailId = extractPublicIdFromCloudinaryUrl(product.thumbnail);
+    if (thumbnailId) cloudinaryIdsToDelete.add(thumbnailId);
+  }
+
+  await Product.findByIdAndDelete(req.params.id);
+
+  if (cloudinaryIdsToDelete.size > 0) {
+    try {
+      await deleteFromCloudinary([...cloudinaryIdsToDelete]);
+    } catch (error) {
+      console.warn("Cloudinary delete error:", error);
+    }
   }
 
   sendResponse(res, {

@@ -80,3 +80,56 @@ export const uploadOnCloudinary = (fileBuffer, options = {}) => {
     stream.end(fileBuffer);
   });
 };
+
+export const extractPublicIdFromCloudinaryUrl = (url) => {
+  if (!url || typeof url !== "string") return null;
+
+  try {
+    const parsedUrl = new URL(url);
+    const segments = parsedUrl.pathname.split("/").filter(Boolean);
+    const uploadIndex = segments.indexOf("upload");
+
+    if (uploadIndex === -1 || uploadIndex === segments.length - 1) {
+      return null;
+    }
+
+    const afterUpload = segments.slice(uploadIndex + 1);
+    let publicIdParts = afterUpload;
+
+    const versionIndex = [...afterUpload]
+      .map((segment, index) => (/^v\d+$/.test(segment) ? index : -1))
+      .filter((index) => index !== -1)
+      .pop();
+
+    if (versionIndex !== undefined) {
+      publicIdParts = afterUpload.slice(versionIndex + 1);
+    }
+
+    const publicIdWithExt = publicIdParts.join("/");
+    return publicIdWithExt.replace(/\.[^/.]+$/, "");
+  } catch (error) {
+    return null;
+  }
+};
+
+export const deleteFromCloudinary = async (publicIds = []) => {
+  const ids = Array.isArray(publicIds) ? publicIds : [publicIds];
+  const uniqueIds = [
+    ...new Set(ids.map((id) => (id || "").toString().trim()).filter(Boolean)),
+  ];
+
+  if (uniqueIds.length === 0) return [];
+
+  const results = await Promise.allSettled(
+    uniqueIds.map((id) => cloudinary.uploader.destroy(id, { invalidate: true })),
+  );
+
+  const failures = results.filter((result) => result.status === "rejected");
+  if (failures.length > 0) {
+    const error = new Error("Cloudinary delete failed");
+    error.details = failures.map((failure) => failure.reason);
+    throw error;
+  }
+
+  return results.map((result) => result.value);
+};
