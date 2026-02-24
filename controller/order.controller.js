@@ -139,18 +139,38 @@ export const updateOrderStatus = catchAsync(async (req, res) => {
 });
 
 export const getMyOrders = catchAsync(async (req, res) => {
-  const orders = await OrderModel.find({
+  const { page = 1, limit = 10 } = req.query;
+  const pageNum = Number(page);
+  const limitNum = Number(limit);
+  const skip = (pageNum - 1) * limitNum;
+  const filter = {
     customer: req.user._id,
     status: { $in: ["in_progress", "shipped", "delivered"] },
-  })
-    .populate("items.product", "title price photos")
-    .populate("customer", "name email")
-    .populate("vendor", "name storeName");
+  };
+
+  const [orders, total] = await Promise.all([
+    OrderModel.find(filter)
+      .populate("items.product", "title price photos")
+      .populate("customer", "name email")
+      .populate("vendor", "name storeName")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum),
+    OrderModel.countDocuments(filter),
+  ]);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
     message: "Orders fetched",
-    data: orders,
+    data: {
+      orders,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    },
   });
 });
