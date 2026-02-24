@@ -11,6 +11,7 @@ import sendResponse from "../utils/sendResponse.js";
 import catchAsync from "../utils/catchAsync.js";
 import { User } from "../model/user.model.js";
 import { Shop } from "../model/shop.model.js";
+import { Wishlist } from "../model/wishlist.model.js";
 
 const parseArrayField = (value) => {
   if (!value) return [];
@@ -318,9 +319,7 @@ export const getProducts = catchAsync(async (req, res) => {
   const query = {};
 
   // 🔎 Search
-  if (search) {
-    query.title = { $regex: search, $options: "i" };
-  }
+  if (search) query.title = { $regex: search, $options: "i" };
 
   // 💰 Price filter
   if (minPrice || maxPrice) {
@@ -333,21 +332,16 @@ export const getProducts = catchAsync(async (req, res) => {
   if (inStock === "true") query.stock = { $gt: 0 };
   if (inStock === "false") query.stock = 0;
 
-  // 🏷 Category filter (Hierarchy Support)
+  // 🏷 Category filter (Hierarchy)
   if (category) {
     const selectedCategory = await Category.findById(category);
-
-    if (!selectedCategory) {
-      throw new AppError(httpStatus.BAD_REQUEST, "Invalid category");
-    }
+    if (!selectedCategory) throw new AppError(httpStatus.BAD_REQUEST, "Invalid category");
 
     const categories = await Category.find({
       path: { $regex: `^${selectedCategory.path}` },
     }).select("_id");
 
-    const categoryIds = categories.map((cat) => cat._id);
-
-    query.category = { $in: categoryIds };
+    query.category = { $in: categories.map((c) => c._id) };
   }
 
   // 🌟 Type logic
@@ -364,24 +358,12 @@ export const getProducts = catchAsync(async (req, res) => {
 
   // 🔃 Sorting
   let sortObj = { createdAt: -1 };
-
   if (type === "popular") {
-    sortObj = {
-      soldCount: -1,
-      rating: -1,
-      reviewsCount: -1,
-      createdAt: -1,
-    };
+    sortObj = { soldCount: -1, rating: -1, reviewsCount: -1, createdAt: -1 };
   }
-
   if (type === "featured") {
-    sortObj = {
-      rating: -1,
-      reviewsCount: -1,
-      createdAt: -1,
-    };
+    sortObj = { rating: -1, reviewsCount: -1, createdAt: -1 };
   }
-
   if (sort === "price_asc") sortObj = { price: 1 };
   if (sort === "price_desc") sortObj = { price: -1 };
   if (sort === "latest") sortObj = { createdAt: -1 };
@@ -389,6 +371,14 @@ export const getProducts = catchAsync(async (req, res) => {
   const pageNum = Number(page);
   const limitNum = Number(limit);
 
+  // ✅ 1) Fetch wishlist from Wishlist model
+  let wishlistSet = new Set();
+  if (req.user?._id) {
+    const wishlistDoc = await Wishlist.findOne({ user: req.user._id }).select("products");
+    wishlistSet = new Set((wishlistDoc?.products || []).map((id) => id.toString()));
+  }
+
+  // ✅ 2) Fetch products
   const products = await Product.find(query)
     .populate("category", "name path")
     .populate("vendor", "name storeName")
@@ -397,6 +387,15 @@ export const getProducts = catchAsync(async (req, res) => {
     .skip((pageNum - 1) * limitNum)
     .sort(sortObj);
 
+  // ✅ 3) Add isWishlisted field using map
+  const updatedProducts = products.map((product) => {
+    const p = product.toObject();
+    return {
+      ...p,
+      isWishlisted: wishlistSet.has(product._id.toString()),
+    };
+  });
+
   const total = await Product.countDocuments(query);
 
   sendResponse(res, {
@@ -404,7 +403,7 @@ export const getProducts = catchAsync(async (req, res) => {
     success: true,
     message: "Products fetched",
     data: {
-      products,
+      products: updatedProducts,
       pagination: {
         total,
         page: pageNum,
