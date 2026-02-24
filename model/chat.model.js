@@ -6,6 +6,21 @@ const messageSchema = new Schema(
       type: String,
       trim: true,
     },
+    type: {
+      type: String,
+      enum: ["text", "file", "image", "video", "audio"],
+      default: "text",
+    },
+    attachments: [
+      {
+        public_id: { type: String },
+        url: { type: String },
+        fileName: { type: String },
+        mimeType: { type: String },
+        size: { type: Number },
+        resourceType: { type: String },
+      },
+    ],
     askPrice: {
       type: Boolean,
       default: false,

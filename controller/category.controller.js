@@ -71,7 +71,7 @@ export const getCategories = catchAsync(async (req, res) => {
 
         const associatedProducts = await Product.find({
           category: category._id,
-        });
+        }).populate("category", "name path").populate("vendor", "name");
         return {
           ...category.toObject(),
           associatedProducts,
@@ -204,7 +204,7 @@ export const getCategoryTree = catchAsync(async (req, res) => {
         });
         const associatedProducts = await Product.find({
           category: category._id,
-        });
+        }).populate("category", "name path").populate("vendor", "name").populate("shopId", "name description shopStatus");
 
         return {
           _id: category._id,
