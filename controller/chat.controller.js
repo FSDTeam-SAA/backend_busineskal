@@ -8,6 +8,7 @@ import { User } from "../model/user.model.js";
 import { Order } from "../model/order.model.js";
 import { getIO } from "../utils/socket.js";
 import { uploadOnCloudinary } from "../utils/commonMethod.js";
+import { Shop } from "../model/shop.model.js";
 
 const toBoolean = (value) => value === true || value === "true";
 
@@ -207,11 +208,42 @@ export const getChatForUser = catchAsync(async (req, res) => {
       select: "name price images",
     })
     .sort({ updatedAt: -1 }); // Sort by last updated time
+      // Step 2: Extract seller IDs
+  const sellerIds = [
+    ...new Set(
+      chats
+        .filter(chat => chat.seller?._id)
+        .map(chat => chat.seller._id.toString())
+    ),
+  ];
+
+  // Step 3: Fetch shops
+  const shops = await Shop.find({
+    owner: { $in: sellerIds },
+  })
+    .select("name owner")
+    .lean();
+
+  // Step 4: Create map
+  const shopMap = {};
+  shops.forEach(shop => {
+    shopMap[shop.owner.toString()] = shop.name;
+  });
+
+  // Step 5: Attach shopName to seller
+  const updatedChats = chat.map(chat => {
+    if (chat.seller && shopMap[chat.seller._id.toString()]) {
+      chat.seller.shopName = shopMap[chat.seller._id.toString()];
+    } else {
+      chat.seller.shopName = null;
+    }
+    return chat;
+  });
   sendResponse(res, {
     statusCode: httpStatus.OK,
     message: "Chat retrieved successfully",
     success: true,
-    data: chat,
+    data: updatedChats,
   });
 });
 
