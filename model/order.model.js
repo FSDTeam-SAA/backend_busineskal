@@ -60,10 +60,7 @@ const orderSchema = new Schema(
       required: true,
     },
     address: {
-      street: { type: String },
-      city: { type: String },
-      postalCode: { type: String },
-      country: { type: String },
+      type: String,
     },
     coupon: {
       type: Schema.Types.ObjectId,
