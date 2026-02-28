@@ -207,11 +207,11 @@ export const getChatForUser = catchAsync(async (req, res) => {
       path: "messages.productId",
       select: "name price images",
     })
-    .sort({ updatedAt: -1 }); // Sort by last updated time
+    .sort({ updatedAt: -1 }).lean();   // 🔥 THIS IS THE FIX; // Sort by last updated time
       // Step 2: Extract seller IDs
   const sellerIds = [
     ...new Set(
-      chats
+      chat
         .filter(chat => chat.seller?._id)
         .map(chat => chat.seller._id.toString())
     ),
@@ -224,6 +224,8 @@ export const getChatForUser = catchAsync(async (req, res) => {
     .select("name owner")
     .lean();
 
+    console.log(shops)
+
   // Step 4: Create map
   const shopMap = {};
   shops.forEach(shop => {
@@ -234,11 +236,15 @@ export const getChatForUser = catchAsync(async (req, res) => {
   const updatedChats = chat.map(chat => {
     if (chat.seller && shopMap[chat.seller._id.toString()]) {
       chat.seller.shopName = shopMap[chat.seller._id.toString()];
+      console.log(chat.seller.shopName)
     } else {
+      console.log(chat.seller)
       chat.seller.shopName = null;
     }
+    console.log(chat.seller)
     return chat;
   });
+  console.log(updatedChats)
   sendResponse(res, {
     statusCode: httpStatus.OK,
     message: "Chat retrieved successfully",
