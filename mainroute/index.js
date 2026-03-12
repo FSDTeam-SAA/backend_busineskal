@@ -18,6 +18,7 @@ import adminDashboardRoute from "../route/admin.route.js";
 import sellerDashboardRoute from "../route/seller.route.js";
 import shopRoute from "../route/shop.route.js";
 import chatRoute from "../route/chat.route.js";
+import serviceRoute from "../route/service.routes.js"
 
 const router = express.Router();
 
@@ -40,5 +41,6 @@ router.use("/admin/dashboard", adminDashboardRoute);
 router.use("/seller/dashboard", sellerDashboardRoute);
 router.use("/shop", shopRoute);
 router.use("/chat", chatRoute);
+router.use("/service", serviceRoute);
 
 export default router;

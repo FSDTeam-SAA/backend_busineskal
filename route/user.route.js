@@ -7,6 +7,8 @@ import {
   getAllSellers,
   getPendingSellers,
   updateSellersStatus,
+  getAllSuppliers,
+  getSingleSupplier
 } from "../controller/user.controller.js";
 
 import { protect } from "../middleware/auth.middleware.js";
@@ -16,6 +18,9 @@ const router = express.Router();
 router.get("/profile", protect, getProfile);
 router.put("/profile", protect, upload.single("avatar"), updateProfile);
 router.put("/password", protect, changePassword);
+
+router.get("/", getAllSuppliers);
+router.get("/:id", getSingleSupplier);
 
 router.get("/sellers", protect, getAllSellers);
 router.get("/sellers/pending", protect, getPendingSellers);
