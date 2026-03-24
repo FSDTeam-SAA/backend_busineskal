@@ -166,8 +166,8 @@ export const deleteSeller = catchAsync(async (req, res, next) => {
 export const getAllSuppliers = catchAsync(async (req, res) => {
   const { search, country, verified, page = 1, limit = 10 } = req.query;
 
-  const filter = {
-    role: { $in: ["user", "admin", "seller"] },
+    const filter = {
+    role: "seller",
   };
 
   if (search) {
@@ -248,7 +248,7 @@ export const getSingleSupplier = catchAsync(async (req, res) => {
 
   const supplier = await User.findOne({
     _id: id,
-    role: { $in: ["user", "admin", "seller"] },
+    role: "seller",
   })
     .select(
       "name companyName firstName lastName email image avatar logo country rating totalReviews verified phone description address"
