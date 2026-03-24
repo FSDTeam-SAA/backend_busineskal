@@ -6,27 +6,29 @@ import { Banner } from "../model/banner.model.js";
 import { uploadOnCloudinary } from "../utils/commonMethod.js";
 
 export const getBanners = catchAsync(async (req, res) => {
-  const banners = await Banner.find();
+  const banners = await Banner.find()
+    .populate("shopId", "name email") // populate shopId with selected fields
+    .sort({ createdAt: -1 }); // newest first
+
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: "Banners fetched",
+    message: "Banners fetched successfully",
     data: banners,
   });
 });
 
 export const createBanner = catchAsync(async (req, res) => {
 
-  const bannerImage = {}
+  const bannerImage = {};
   if (req.file) {
     const banner = req.file.buffer;
     const upload = await uploadOnCloudinary(banner);
 
     bannerImage.public_id = upload.public_id;
     bannerImage.url = upload.secure_url;
-    };
-
-  const banner = await Banner.create({ banner: bannerImage });
+  };
+  const banner = await Banner.create({ banner: bannerImage, shopId: req.body.shopId });
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
