@@ -11,6 +11,7 @@ import httpStatus from "http-status";
 import sendResponse from "../utils/sendResponse.js";
 import { sendEmail } from "../utils/sendEmail.js";
 import { User } from "./../model/user.model.js";
+import { getUserDisplayName, notifyAdmins } from "../utils/notification.js";
 
 export const register = catchAsync(async (req, res, next) => {
   const { name, email, password, role } = req.body;
@@ -32,6 +33,18 @@ export const register = catchAsync(async (req, res, next) => {
     role: role || "user",
     isEmailVerified: true,
   });
+
+  if (user.role === "seller") {
+    await notifyAdmins({
+      actor: user._id,
+      type: "seller_request",
+      title: "New seller request",
+      message: `${getUserDisplayName(user)} registered as a seller and is waiting for approval.`,
+      metadata: {
+        sellerId: user._id.toString(),
+      },
+    });
+  }
 
   sendResponse(res, {
     statusCode: 201,

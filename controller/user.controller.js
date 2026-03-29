@@ -7,6 +7,7 @@ import sendResponse from "../utils/sendResponse.js";
 import catchAsync from "../utils/catchAsync.js";
 import { Shop } from "../model/shop.model.js";
 import { Product } from "../model/product.model.js";
+import { createNotification } from "../utils/notification.js";
 
 
 export const getProfile = catchAsync(async (req, res) => {
@@ -112,19 +113,37 @@ export const updateSellersStatus = catchAsync(async (req, res, next) => {
 
   user.vendorStatus = status;
 
-  const shop = await Shop.create({
-    name: "",
-    description: "",
-    banner: "",
-    certificate: "",
-    address: "",
-    owner: user._id,
-    products: [],
-  });
+  if (status === "approved" && !user.shopId) {
+    const shop = await Shop.create({
+      name: "",
+      description: "",
+      banner: [],
+      certificate: {},
+      address: "",
+      owner: user._id,
+      products: [],
+    });
 
-  user.shopId = shop._id;
+    user.shopId = shop._id;
+  }
 
   await user.save();
+
+  await createNotification({
+    user: user._id,
+    actor: req.user?._id || null,
+    shop: user.shopId || null,
+    type: status === "approved" ? "seller_approved" : "seller_rejected",
+    title:
+      status === "approved"
+        ? "Seller account approved"
+        : "Seller account rejected",
+    message:
+      status === "approved"
+        ? "Your seller account has been approved. You can now access seller features."
+        : "Your seller account request was rejected. Please contact support for more information.",
+    metadata: { status },
+  });
 
   sendResponse(res, {
     statusCode: 200,

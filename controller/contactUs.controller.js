@@ -3,6 +3,7 @@ import catchAsync from "../utils/catchAsync.js";
 import httpStatus from "http-status";
 import AppError from "../errors/AppError.js";
 import sendResponse from "../utils/sendResponse.js";
+import { notifyAdmins } from "../utils/notification.js";
 
 export const createContactUs = catchAsync(async (req, res) => {
   const { name, email, subject, message } = req.body;
@@ -12,6 +13,19 @@ export const createContactUs = catchAsync(async (req, res) => {
     subject,
     message,
   });
+
+  await notifyAdmins({
+    actor: req.user?._id || null,
+    contactUs: contactUs._id,
+    type: "contact_request",
+    title: "New contact request",
+    message: `${name} submitted a support request: ${subject}.`,
+    metadata: {
+      email,
+      subject,
+    },
+  });
+
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,

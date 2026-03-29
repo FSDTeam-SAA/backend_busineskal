@@ -9,6 +9,7 @@ import { Order } from "../model/order.model.js";
 import { getIO } from "../utils/socket.js";
 import { uploadOnCloudinary } from "../utils/commonMethod.js";
 import { Shop } from "../model/shop.model.js";
+import { createNotification, getUserDisplayName } from "../utils/notification.js";
 
 const toBoolean = (value) => value === true || value === "true";
 
@@ -126,6 +127,45 @@ export const sendMessage = catchAsync(async (req, res) => {
     io.to(`chat_${chat.user.toString()}`).emit("newMassage", payload);
     io.to(`chat_${chat.seller.toString()}`).emit("newMassage", payload);
   }
+
+  const recipientId =
+    chat.user.toString() === req.user._id.toString() ? chat.seller : chat.user;
+  const senderName = getUserDisplayName(req.user);
+  const attachmentSummary =
+    attachments.length > 1
+      ? `${attachments.length} files`
+      : attachments.length === 1
+        ? "a file"
+        : "";
+
+  let notificationTitle = "New message";
+  let notificationType = "chat_message";
+  let notificationMessage = text
+    ? `${senderName}: ${text.slice(0, 120)}`
+    : attachmentSummary
+      ? `${senderName} sent ${attachmentSummary}.`
+      : `${senderName} sent you a message.`;
+
+  if (askPriceFlag) {
+    notificationTitle = "New price request";
+    notificationType = "price_request";
+    notificationMessage = `${senderName} requested a price${productId ? " for a product" : ""}.`;
+  }
+
+  await createNotification({
+    user: recipientId,
+    actor: req.user._id,
+    chat: chat._id,
+    product: productId || null,
+    type: notificationType,
+    title: notificationTitle,
+    message: notificationMessage,
+    metadata: {
+      chatId: chat._id.toString(),
+      messageType: messages.type,
+      askPrice: askPriceFlag,
+    },
+  });
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -437,6 +477,17 @@ export const sendMessageToAllSellers = catchAsync(async (req, res) => {
       sender: req.user._id,
       date: new Date(),
     });
+  });
+
+  await createNotification({
+    userIds: sellers.map((seller) => seller._id),
+    actor: req.user._id,
+    type: "admin_broadcast",
+    title: "Admin announcement",
+    message,
+    metadata: {
+      broadcast: true,
+    },
   });
 
   sendResponse(res, {

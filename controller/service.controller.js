@@ -5,6 +5,11 @@ import sendResponse from "../utils/sendResponse.js";
 import AppError from "../errors/AppError.js";
 import { uploadOnCloudinary } from "../utils/commonMethod.js"; // adjust path if needed
 import { Service } from "../model/service.model.js";
+import {
+  createNotification,
+  getUserDisplayName,
+  notifyAdmins,
+} from "../utils/notification.js";
 
 export const createService = catchAsync(async (req, res) => {
   const { title, description, country, category, rating, totalReviews, verified } =
@@ -30,6 +35,19 @@ export const createService = catchAsync(async (req, res) => {
   }
 
   const result = await Service.create(payload);
+
+  if (req.user.role === "seller" && !result.verified) {
+    await notifyAdmins({
+      actor: req.user._id,
+      service: result._id,
+      type: "service_submitted",
+      title: "New service submitted",
+      message: `${getUserDisplayName(req.user)} submitted "${result.title}" for review.`,
+      metadata: {
+        serviceId: result._id.toString(),
+      },
+    });
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.CREATED,
@@ -131,6 +149,7 @@ export const updateService = catchAsync(async (req, res) => {
   }
 
   const service = await Service.findById(id);
+  const previousVerified = service?.verified;
 
   if (!service) {
     throw new AppError(httpStatus.NOT_FOUND, "Service not found");
@@ -155,6 +174,26 @@ export const updateService = catchAsync(async (req, res) => {
   }
 
   await service.save();
+
+  if (
+    verified !== undefined &&
+    service.vendor?.toString() !== req.user._id.toString() &&
+    previousVerified !== service.verified
+  ) {
+    await createNotification({
+      user: service.vendor,
+      actor: req.user._id,
+      service: service._id,
+      type: service.verified ? "service_approved" : "service_rejected",
+      title: service.verified ? "Service approved" : "Service rejected",
+      message: service.verified
+        ? `"${service.title}" has been approved and is now visible.`
+        : `"${service.title}" was rejected. Please review it and update the listing.`,
+      metadata: {
+        verified: service.verified,
+      },
+    });
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,

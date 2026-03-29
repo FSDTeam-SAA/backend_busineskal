@@ -19,12 +19,12 @@ router.get("/profile", protect, getProfile);
 router.put("/profile", protect, upload.single("avatar"), updateProfile);
 router.put("/password", protect, changePassword);
 
-router.get("/", getAllSuppliers);
-router.get("/:id", getSingleSupplier);
-
 router.get("/sellers", protect, getAllSellers);
 router.get("/sellers/pending", protect, getPendingSellers);
 router.patch("/sellers/:userId/status", protect, updateSellersStatus);
 router.delete("/sellers/:userId", protect, deleteSeller);
+
+router.get("/", getAllSuppliers);
+router.get("/:id", getSingleSupplier);
 
 export default router;

@@ -5,6 +5,10 @@ import { Product } from "../model/product.model.js";
 import AppError from "../errors/AppError.js";
 import catchAsync from "../utils/catchAsync.js";
 import sendResponse from "../utils/sendResponse.js";
+import {
+  createNotification,
+  getUserDisplayName,
+} from "../utils/notification.js";
 
 export const recalculateProductRating = async (productId) => {
   const pid = new mongoose.Types.ObjectId(productId);
@@ -79,6 +83,20 @@ export const addReview = catchAsync(async (req, res) => {
   await user.save();
 
   const stats = await recalculateProductRating(productId);
+
+  if (product.vendor.toString() !== userId.toString()) {
+    await createNotification({
+      user: product.vendor,
+      actor: userId,
+      product: product._id,
+      type: "review_received",
+      title: "New product review",
+      message: `${getUserDisplayName(user)} left a ${rating}-star review on "${product.title}".`,
+      metadata: {
+        rating: Number(rating),
+      },
+    });
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.CREATED,

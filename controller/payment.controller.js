@@ -3,6 +3,7 @@ import { paymentInfo } from "../model/payment.model.js";
 import { Subscription } from "../model/subscription.model.js";
 import { User } from "../model/user.model.js";
 import Stripe from "stripe";
+import { createNotification } from "../utils/notification.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-11-15",
@@ -128,6 +129,8 @@ export const confirmPayment = async (req, res) => {
       return res.status(404).json({ error: "Payment record not found" });
     }
 
+    const wasAlreadyComplete = paymentRecord.paymentStatus === "complete";
+
     // Calculate admin commission for order payments
     let adminCommission = 0;
     if (paymentRecord.type === "order") {
@@ -145,8 +148,9 @@ export const confirmPayment = async (req, res) => {
     );
 
     // Handle order payment
+    let order = null;
     if (paymentRecord.orderId) {
-      const order = await Order.findById(paymentRecord.orderId).populate(
+      order = await Order.findById(paymentRecord.orderId).populate(
         "items.product customer vendor",
       );
 
@@ -158,10 +162,11 @@ export const confirmPayment = async (req, res) => {
     }
 
     // Handle subscription payment
+    let subscription = null;
     if (paymentRecord.subscriptionId && paymentRecord.type === "subscription") {
       const user = await User.findById(paymentRecord.userId);
       if (user && user.role === "seller") {
-        const subscription = await Subscription.findById(
+        subscription = await Subscription.findById(
           paymentRecord.subscriptionId,
         );
         if (subscription) {
@@ -169,6 +174,56 @@ export const confirmPayment = async (req, res) => {
             paymentStatus: "paid",
           });
         }
+      }
+    }
+
+    if (!wasAlreadyComplete) {
+      if (order) {
+        await Promise.all([
+          createNotification({
+            user: order.customer?._id || paymentRecord.userId,
+            actor: paymentRecord.userId,
+            order: order._id,
+            payment: paymentRecord._id,
+            type: "payment_success",
+            title: "Payment successful",
+            message: `Your payment for order ${order.orderId} was confirmed successfully.`,
+            metadata: {
+              orderId: order.orderId,
+              amount: paymentRecord.price,
+            },
+          }),
+          createNotification({
+            user: order.vendor?._id,
+            actor: paymentRecord.userId,
+            order: order._id,
+            payment: paymentRecord._id,
+            type: "order_paid",
+            title: "Order payment received",
+            message: `Payment for order ${order.orderId} has been confirmed.`,
+            metadata: {
+              orderId: order.orderId,
+              amount: paymentRecord.price,
+            },
+          }),
+        ]);
+      }
+
+      if (subscription) {
+        await createNotification({
+          user: paymentRecord.userId,
+          actor: paymentRecord.userId,
+          subscription: subscription._id,
+          payment: paymentRecord._id,
+          type: "subscription_paid",
+          title: "Subscription payment successful",
+          message: `Your payment for the ${subscription.planName} plan was confirmed successfully.`,
+          metadata: {
+            subscriptionId: subscription._id.toString(),
+            amount: paymentRecord.price,
+            billingPeriod: paymentRecord.billingPeriod,
+          },
+        });
       }
     }
 

@@ -2,6 +2,9 @@ import { Server } from "socket.io";
 
 let io;
 
+export const getChatRoom = (userId) => `chat_${userId}`;
+export const getNotificationRoom = (userId) => `notifications_${userId}`;
+
 export const initSocket = (server) => {
   io = new Server(server, {
     cors: {

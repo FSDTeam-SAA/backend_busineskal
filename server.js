@@ -5,7 +5,11 @@ import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
 import router from "./mainroute/index.js";
 import { createServer } from "http";
-import { initSocket } from "./utils/socket.js";
+import {
+  getChatRoom,
+  getNotificationRoom,
+  initSocket,
+} from "./utils/socket.js";
 
 import globalErrorHandler from "./middleware/globalErrorHandler.js";
 import notFound from "./middleware/notFound.js";
@@ -45,11 +49,24 @@ app.use(notFound);
 io.on("connection", (socket) => {
   console.log("A client connected:", socket.id);
 
-  socket.on("joinChatRoom", (userId) => {
+  const joinUserRooms = (userId) => {
     if (userId) {
-      socket.join(`chat_${userId}`);
-      console.log(`Client ${socket.id} joined user room: ${userId}`);
+      socket.join(getChatRoom(userId));
+      socket.join(getNotificationRoom(userId));
+      console.log(`Client ${socket.id} joined rooms for user: ${userId}`);
     }
+  };
+
+  socket.on("joinChatRoom", (userId) => {
+    joinUserRooms(userId);
+  });
+
+  socket.on("joinNotificationRoom", (userId) => {
+    joinUserRooms(userId);
+  });
+
+  socket.on("joinUserRoom", (userId) => {
+    joinUserRooms(userId);
   });
 
   socket.on("joinAlerts", () => {
@@ -60,7 +77,7 @@ io.on("connection", (socket) => {
   const relayCallEvent = (event, payload) => {
     const { toUserId } = payload || {};
     if (!toUserId) return;
-    io.to(`chat_${toUserId}`).emit(event, payload);
+    io.to(getChatRoom(toUserId)).emit(event, payload);
   };
 
   socket.on("call:request", (payload) => relayCallEvent("call:request", payload));

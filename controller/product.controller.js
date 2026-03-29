@@ -12,6 +12,11 @@ import catchAsync from "../utils/catchAsync.js";
 import { User } from "../model/user.model.js";
 import { Shop } from "../model/shop.model.js";
 import { Wishlist } from "../model/wishlist.model.js";
+import {
+  createNotification,
+  getUserDisplayName,
+  notifyAdmins,
+} from "../utils/notification.js";
 
 const parseArrayField = (value) => {
   if (!value) return [];
@@ -118,6 +123,20 @@ export const addProduct = catchAsync(async (req, res) => {
   await Shop.findByIdAndUpdate(shopId, {
     $addToSet: { products: product._id },
   });
+
+  if (req.user.role === "seller") {
+    await notifyAdmins({
+      actor: req.user._id,
+      product: product._id,
+      shop: shopId || null,
+      type: "product_submitted",
+      title: "New product submitted",
+      message: `${getUserDisplayName(req.user)} submitted "${product.title}" for review.`,
+      metadata: {
+        productId: product._id.toString(),
+      },
+    });
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.CREATED,
@@ -519,6 +538,22 @@ export const updateProductVerification = catchAsync(async (req, res) => {
 
   product.verified = verified;
   await product.save();
+
+  if (product.vendor.toString() !== req.user._id.toString()) {
+    await createNotification({
+      user: product.vendor,
+      actor: req.user._id,
+      product: product._id,
+      type: verified ? "product_approved" : "product_rejected",
+      title: verified ? "Product approved" : "Product rejected",
+      message: verified
+        ? `"${product.title}" has been approved and is now live.`
+        : `"${product.title}" was rejected. Please review the listing and submit it again.`,
+      metadata: {
+        verified,
+      },
+    });
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,

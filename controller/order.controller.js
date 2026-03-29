@@ -5,6 +5,12 @@ import sendResponse from "../utils/sendResponse.js";
 import catchAsync from "../utils/catchAsync.js";
 import { nanoid } from "nanoid";
 import { Product } from "../model/product.model.js";
+import {
+  createNotification,
+  getUserDisplayName,
+} from "../utils/notification.js";
+
+const formatOrderStatus = (status = "") => status.replace(/_/g, " ");
 
 export const createOrder = catchAsync(async (req, res) => {
   const { items, address } = req.body;
@@ -45,6 +51,33 @@ export const createOrder = catchAsync(async (req, res) => {
     address,
     expectedDeliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   });
+
+  await Promise.all([
+    createNotification({
+      user: customer,
+      actor: customer,
+      order: order._id,
+      type: "order_created",
+      title: "Order placed",
+      message: `Your order ${order.orderId} has been placed successfully.`,
+      metadata: {
+        orderId: order.orderId,
+        status: order.status,
+      },
+    }),
+    createNotification({
+      user: order.vendor,
+      actor: customer,
+      order: order._id,
+      type: "new_order",
+      title: "New order received",
+      message: `${getUserDisplayName(req.user)} placed order ${order.orderId}.`,
+      metadata: {
+        orderId: order.orderId,
+        status: order.status,
+      },
+    }),
+  ]);
 
   sendResponse(res, {
     statusCode: httpStatus.CREATED,
@@ -120,14 +153,68 @@ export const updateOrderStatus = catchAsync(async (req, res) => {
   }
 
   const { status, trackingNumber } = req.body;
-  const order = await OrderModel.findOneAndUpdate(
-    { orderId: req.params.orderId },
-    { status, trackingNumber },
-    { new: true },
-  ).populate("items.product");
+  const order = await OrderModel.findOne({ orderId: req.params.orderId })
+    .populate("items.product")
+    .populate("customer", "name firstName lastName email")
+    .populate("vendor", "name firstName lastName email storeName");
 
-  if (!order || order.vendor.toString() !== req.user._id.toString()) {
+  if (!order) {
+    throw new AppError(httpStatus.NOT_FOUND, "Order not found");
+  }
+
+  if (
+    req.user.role === "seller" &&
+    order.vendor._id.toString() !== req.user._id.toString()
+  ) {
     throw new AppError(httpStatus.FORBIDDEN, "Access denied");
+  }
+
+  if (status !== undefined) {
+    order.status = status;
+  }
+
+  if (trackingNumber !== undefined) {
+    order.trackingNumber = trackingNumber;
+  }
+
+  await order.save();
+
+  const readableStatus = formatOrderStatus(order.status);
+  const trackingMessage = order.trackingNumber
+    ? ` Tracking number: ${order.trackingNumber}.`
+    : "";
+
+  await createNotification({
+    user: order.customer._id,
+    actor: req.user._id,
+    order: order._id,
+    type: "order_status_updated",
+    title: `Order ${readableStatus}`,
+    message: `Your order ${order.orderId} is now ${readableStatus}.${trackingMessage}`,
+    metadata: {
+      orderId: order.orderId,
+      status: order.status,
+      trackingNumber: order.trackingNumber,
+    },
+  });
+
+  if (
+    req.user.role === "admin" &&
+    order.vendor?._id?.toString() !== req.user._id.toString()
+  ) {
+    await createNotification({
+      user: order.vendor._id,
+      actor: req.user._id,
+      order: order._id,
+      type: "order_status_updated",
+      title: "Order status changed",
+      message: `Order ${order.orderId} was updated to ${readableStatus} by admin.${trackingMessage}`,
+      metadata: {
+        orderId: order.orderId,
+        status: order.status,
+        trackingNumber: order.trackingNumber,
+      },
+    });
   }
 
   sendResponse(res, {
