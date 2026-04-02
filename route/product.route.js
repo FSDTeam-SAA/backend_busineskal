@@ -8,6 +8,7 @@ import {
   updateProductVerification,
   getPendingProducts,
   getMyProducts,
+  searchProduct
 } from "../controller/product.controller.js";
 import { protect } from "../middleware/auth.middleware.js";
 import upload from "../middleware/multer.middleware.js";
@@ -41,5 +42,17 @@ router.put(
   updateProduct,
 );
 router.delete("/:id", protect, deleteProduct);
+
+router.post(
+  "/search",
+  // protect, // optional: keep public or protected based on your need
+  upload.fields([
+    { name: "voice", maxCount: 1 },
+    { name: "audio", maxCount: 1 },
+    { name: "image", maxCount: 1 },
+    { name: "photo", maxCount: 1 },
+  ]),
+  searchProduct,
+);
 
 export default router;

@@ -17,6 +17,15 @@ import {
   getUserDisplayName,
   notifyAdmins,
 } from "../utils/notification.js";
+import {
+  detectSearchInputType,
+  extractQueryFromVoice,
+  extractQueryFromImage,
+  buildProductSearchQuery,
+  findProductsWithFallback,
+  generateProductSearchAiReply,
+  normalizeSearchText,
+} from "../service/productSearch.service.js";
 
 const parseArrayField = (value) => {
   if (!value) return [];
@@ -564,6 +573,148 @@ export const updateProductVerification = catchAsync(async (req, res) => {
     data: {
       _id: product._id,
       verified: product.verified,
+    },
+  });
+});
+
+
+export const searchProduct = catchAsync(async (req, res) => {
+  const { text, page = 1, limit = 10 } = req.body || {};
+  const pageNum = Number(page) || 1;
+  const limitNum = Number(limit) || 10;
+
+  let inputType = detectSearchInputType({
+    text,
+    files: req.files,
+  });
+
+  if (!inputType) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "Please provide one search input: text, voice, or image",
+    );
+  }
+
+  let extractedQuery = "";
+
+  // 1) Text input
+  if (inputType === "text") {
+    extractedQuery = normalizeSearchText(text);
+
+    if (!extractedQuery) {
+      throw new AppError(httpStatus.BAD_REQUEST, "Search text is required");
+    }
+  }
+
+  // 2) Voice input
+  if (inputType === "voice") {
+    const voiceFile =
+      req.files?.voice?.[0] ||
+      req.files?.audio?.[0] ||
+      req.file ||
+      null;
+
+    if (!voiceFile) {
+      throw new AppError(httpStatus.BAD_REQUEST, "Voice file is required");
+    }
+
+    extractedQuery = await extractQueryFromVoice(voiceFile);
+
+    if (!extractedQuery) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        "Could not extract searchable text from voice",
+      );
+    }
+  }
+
+  // 3) Image input
+  if (inputType === "image") {
+    const imageFile =
+      req.files?.image?.[0] ||
+      req.files?.photo?.[0] ||
+      req.file ||
+      null;
+
+    if (!imageFile) {
+      throw new AppError(httpStatus.BAD_REQUEST, "Image file is required");
+    }
+
+    extractedQuery = await extractQueryFromImage(imageFile);
+
+    if (!extractedQuery) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        "Could not detect product information from image",
+      );
+    }
+  }
+
+  const normalizedQuery = normalizeSearchText(extractedQuery);
+
+  if (!normalizedQuery) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Invalid search query");
+  }
+
+  const mongoQuery = await buildProductSearchQuery(normalizedQuery);
+
+  const {
+    products,
+    similarProducts,
+    totalMatched,
+    usedFallback,
+    fallbackReason,
+  } = await findProductsWithFallback({
+    mongoQuery,
+    normalizedQuery,
+    page: pageNum,
+    limit: limitNum,
+  });
+
+  const finalProducts = usedFallback ? similarProducts : products;
+
+  let wishlistSet = new Set();
+  if (req.user?._id) {
+    const wishlistDoc = await Wishlist.findOne({ user: req.user._id }).select(
+      "products",
+    );
+    wishlistSet = new Set(
+      (wishlistDoc?.products || []).map((id) => id.toString()),
+    );
+  }
+
+  const updatedProducts = finalProducts.map((product) => {
+    const p = product.toObject ? product.toObject() : product;
+    return {
+      ...p,
+      isWishlisted: wishlistSet.has(product._id.toString()),
+    };
+  });
+
+  const aiReply = await generateProductSearchAiReply({
+    inputType,
+    extractedQuery: normalizedQuery,
+    matchCount: updatedProducts.length,
+    usedFallback,
+    fallbackReason,
+    matchedProducts: updatedProducts,
+  });
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Product search completed successfully",
+    data: {
+      extractedQuery: normalizedQuery,
+      inputType,
+      aiReply,
+      fallbackUsed: usedFallback,
+      matchedProducts: updatedProducts,
+      pagination: {
+        total: usedFallback ? updatedProducts.length : totalMatched,
+        page: pageNum,
+        limit: limitNum,
+      },
     },
   });
 });

@@ -13,13 +13,6 @@ router.use(protect);
 
 router.get("/my", getMyShop);
 router.get("/:id", getShopById);
-router.put(
-  "/update-shop",
-  upload.fields([
-    { name: "banner", maxCount: 3 },
-    { name: "certificate", maxCount: 1 },
-  ]),
-  updateMyShop,
-);
+router.put("/update-shop",upload.fields([{ name: "banner", maxCount: 3 }, { name: "certificate", maxCount: 1 },]),updateMyShop,);
 
 export default router;
