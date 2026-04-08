@@ -20,6 +20,7 @@ import shopRoute from "../route/shop.route.js";
 import chatRoute from "../route/chat.route.js";
 import serviceRoute from "../route/service.routes.js"
 import notificationRoute from "../route/notification.route.js";
+import searchRoute from "../route/search.route.js";
 
 const router = express.Router();
 
@@ -44,5 +45,6 @@ router.use("/shop", shopRoute);
 router.use("/chat", chatRoute);
 router.use("/service", serviceRoute);
 router.use("/notifications", notificationRoute);
+router.use("/search", searchRoute);
 
 export default router;
