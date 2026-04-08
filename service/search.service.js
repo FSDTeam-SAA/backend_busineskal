@@ -1,3 +1,5 @@
+import dotenv from "dotenv";
+dotenv.config();
 import httpStatus from "http-status";
 import AppError from "../errors/AppError.js";
 import { Wishlist } from "../model/wishlist.model.js";
