@@ -152,20 +152,6 @@ export const sendMessage = catchAsync(async (req, res) => {
     notificationMessage = `${senderName} requested a price${productId ? " for a product" : ""}.`;
   }
 
-  await createNotification({
-    user: recipientId,
-    actor: req.user._id,
-    chat: chat._id,
-    product: productId || null,
-    type: notificationType,
-    title: notificationTitle,
-    message: notificationMessage,
-    metadata: {
-      chatId: chat._id.toString(),
-      messageType: messages.type,
-      askPrice: askPriceFlag,
-    },
-  });
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -479,16 +465,6 @@ export const sendMessageToAllSellers = catchAsync(async (req, res) => {
     });
   });
 
-  await createNotification({
-    userIds: sellers.map((seller) => seller._id),
-    actor: req.user._id,
-    type: "admin_broadcast",
-    title: "Admin announcement",
-    message,
-    metadata: {
-      broadcast: true,
-    },
-  });
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
