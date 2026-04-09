@@ -14,10 +14,7 @@ import { protect } from "../middleware/auth.middleware.js";
 import upload from "../middleware/multer.middleware.js";
 const router = express.Router();
 
-router.post(
-  "/add",
-  protect,
-  upload.fields([
+router.post("/add",protect,upload.fields([
     { name: "photos", maxCount: 10 },
     { name: "thumbnail", maxCount: 1 },
   ]),
@@ -28,7 +25,6 @@ router.get("/my", protect, getMyProducts);
 
 router.get("/pending", protect, getPendingProducts);
 router.patch("/:productId/verify", protect, updateProductVerification);
-protect;
 
 router.get("/", protect, getProducts);
 router.get("/:id", protect, getProductById);
