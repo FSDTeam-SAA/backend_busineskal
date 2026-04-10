@@ -66,9 +66,16 @@ cloudinary.config({
 });
 
 export const uploadOnCloudinary = (fileBuffer, options = {}) => {
+  const normalizedOptions = {
+    resource_type: "auto",
+    type: "upload",
+    access_mode: "public",
+    ...options,
+  };
+
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      { ...options },
+      normalizedOptions,
       (error, result) => {
         if (error) {
           console.error("Cloudinary upload error:", error);

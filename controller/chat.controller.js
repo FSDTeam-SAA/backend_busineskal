@@ -12,6 +12,10 @@ import { Shop } from "../model/shop.model.js";
 import { createNotification, getUserDisplayName } from "../utils/notification.js";
 
 const toBoolean = (value) => value === true || value === "true";
+const buildAuthorizedChatQuery = (chatId, userId) => ({
+  _id: chatId,
+  $or: [{ user: userId }, { seller: userId }],
+});
 
 const deriveMessageType = (attachments = []) => {
   if (!attachments.length) return "text";
@@ -65,16 +69,15 @@ export const sendMessage = catchAsync(async (req, res) => {
   const { chatId, message, askPrice, productId } = req.body;
   const text = message || req.body?.text || "";
   const askPriceFlag = toBoolean(askPrice);
-  const chat = await Chat.findById(chatId);
+  const currentUserId = req.user._id;
+  const chat = await Chat.findOne(buildAuthorizedChatQuery(chatId, currentUserId));
   if (!chat) {
-    throw new AppError(404, "Chat not found");
-  }
-  if (
-    chat.user.toString() !== req.user._id.toString() &&
-    chat?.seller?.toString() !== req.user._id.toString()
-  ) {
+    const chatExists = await Chat.exists({ _id: chatId });
+    if (!chatExists) {
+      throw new AppError(404, "Chat not found");
+    }
     throw new AppError(
-      401,
+      httpStatus.FORBIDDEN,
       "You are not authorized to send message in this chat"
     );
   }
@@ -129,7 +132,7 @@ export const sendMessage = catchAsync(async (req, res) => {
   }
 
   const recipientId =
-    chat.user.toString() === req.user._id.toString() ? chat.seller : chat.user;
+    chat.user.toString() === currentUserId.toString() ? chat.seller : chat.user;
   const senderName = getUserDisplayName(req.user);
   const attachmentSummary =
     attachments.length > 1
@@ -191,18 +194,16 @@ export const updateMessage = catchAsync(async (req, res) => {
 
 export const markChatMessagesAsRead = catchAsync(async (req, res) => {
   const { chatId } = req.params;
+  const currentUserId = req.user._id;
 
-  const chat = await Chat.findById(chatId);
+  const chat = await Chat.findOne(buildAuthorizedChatQuery(chatId, currentUserId));
   if (!chat) {
-    throw new AppError(404, "Chat not found");
-  }
-
-  if (
-    chat.user.toString() !== req.user._id.toString() &&
-    chat.seller.toString() !== req.user._id.toString()
-  ) {
+    const chatExists = await Chat.exists({ _id: chatId });
+    if (!chatExists) {
+      throw new AppError(404, "Chat not found");
+    }
     throw new AppError(
-      401,
+      httpStatus.FORBIDDEN,
       "You are not authorized to access this chat"
     );
   }
@@ -210,7 +211,7 @@ export const markChatMessagesAsRead = catchAsync(async (req, res) => {
   let didChange = false;
   for (const message of chat.messages) {
     const senderId = message.user?.toString();
-    if (senderId && senderId !== req.user._id.toString() && !message.read) {
+    if (senderId && senderId !== currentUserId.toString() && !message.read) {
       message.read = true;
       didChange = true;
     }
@@ -541,7 +542,8 @@ export const sendMessageToAllSellers = catchAsync(async (req, res) => {
 
 export const getSingleChat = catchAsync(async (req, res) => {
   const { chatId } = req.params;
-  const chat = await Chat.findById(chatId)
+  const currentUserId = req.user._id;
+  const chat = await Chat.findOne(buildAuthorizedChatQuery(chatId, currentUserId))
     .populate({
       path: "seller",
       select: "name avatar",
@@ -558,13 +560,15 @@ export const getSingleChat = catchAsync(async (req, res) => {
       path: "messages.productId",
       select: "name price images",
     });
-  if (!chat) throw new AppError(404, "Chat not found");
-
-  if (
-    chat.user.toString() !== req.user._id.toString() &&
-    chat.seller.toString() !== req.user._id.toString()
-  ) {
-    throw new AppError(401, "You are not authorized to access this chat");
+  if (!chat) {
+    const chatExists = await Chat.exists({ _id: chatId });
+    if (!chatExists) {
+      throw new AppError(404, "Chat not found");
+    }
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      "You are not authorized to access this chat"
+    );
   }
 
   let didChange = false;
@@ -574,7 +578,7 @@ export const getSingleChat = catchAsync(async (req, res) => {
         ? message.user?._id?.toString()
         : message.user?.toString();
 
-    if (senderId && senderId !== req.user._id.toString() && !message.read) {
+    if (senderId && senderId !== currentUserId.toString() && !message.read) {
       message.read = true;
       didChange = true;
     }
