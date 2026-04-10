@@ -9,6 +9,7 @@ import {
   getMySellersFromOrders,
   getMyCustomersFromOrders,
   sendMessageToAllSellers,
+  markChatMessagesAsRead,
 } from "../controller/chat.controller.js";
 import { protect, isAdmin } from "../middleware/auth.middleware.js";
 import upload from "../middleware/multer.middleware.js";
@@ -21,6 +22,7 @@ router.get("/", getChatForUser);
 router.get("/my-sellers", getMySellersFromOrders);
 router.get("/my-customers", getMyCustomersFromOrders);
 router.get("/:chatId", getSingleChat);
+router.patch("/:chatId/read", markChatMessagesAsRead);
 
 router.post("/", createChat);
 router.post("/message", upload.array("files", 10), sendMessage);

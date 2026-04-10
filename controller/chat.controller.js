@@ -203,6 +203,49 @@ export const updateMessage = catchAsync(async (req, res) => {
   });
 });
 
+export const markChatMessagesAsRead = catchAsync(async (req, res) => {
+  const { chatId } = req.params;
+
+  const chat = await Chat.findById(chatId);
+  if (!chat) {
+    throw new AppError(404, "Chat not found");
+  }
+
+  if (
+    chat.user.toString() !== req.user._id.toString() &&
+    chat.seller.toString() !== req.user._id.toString()
+  ) {
+    throw new AppError(
+      401,
+      "You are not authorized to access this chat"
+    );
+  }
+
+  let didChange = false;
+  for (const message of chat.messages) {
+    const senderId = message.user?.toString();
+    if (senderId && senderId !== req.user._id.toString() && !message.read) {
+      message.read = true;
+      didChange = true;
+    }
+  }
+
+  if (didChange) {
+    await chat.save();
+  }
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: didChange
+      ? "Chat marked as read"
+      : "Chat already marked as read",
+    success: true,
+    data: {
+      read: true,
+    },
+  });
+});
+
 export const deleteMessage = catchAsync(async (req, res) => {
   const { chatId, messageId } = req.body;
 
