@@ -12,6 +12,10 @@ import { Shop } from "../model/shop.model.js";
 import { createNotification, getUserDisplayName } from "../utils/notification.js";
 
 const toBoolean = (value) => value === true || value === "true";
+const buildAuthorizedChatQuery = (chatId, userId) => ({
+  _id: chatId,
+  $or: [{ user: userId }, { seller: userId }],
+});
 
 const deriveMessageType = (attachments = []) => {
   if (!attachments.length) return "text";
@@ -65,16 +69,15 @@ export const sendMessage = catchAsync(async (req, res) => {
   const { chatId, message, askPrice, productId } = req.body;
   const text = message || req.body?.text || "";
   const askPriceFlag = toBoolean(askPrice);
-  const chat = await Chat.findById(chatId);
+  const currentUserId = req.user._id;
+  const chat = await Chat.findOne(buildAuthorizedChatQuery(chatId, currentUserId));
   if (!chat) {
-    throw new AppError(404, "Chat not found");
-  }
-  if (
-    chat.user.toString() !== req.user._id.toString() &&
-    chat?.seller?.toString() !== req.user._id.toString()
-  ) {
+    const chatExists = await Chat.exists({ _id: chatId });
+    if (!chatExists) {
+      throw new AppError(404, "Chat not found");
+    }
     throw new AppError(
-      401,
+      httpStatus.FORBIDDEN,
       "You are not authorized to send message in this chat"
     );
   }
@@ -129,7 +132,7 @@ export const sendMessage = catchAsync(async (req, res) => {
   }
 
   const recipientId =
-    chat.user.toString() === req.user._id.toString() ? chat.seller : chat.user;
+    chat.user.toString() === currentUserId.toString() ? chat.seller : chat.user;
   const senderName = getUserDisplayName(req.user);
   const attachmentSummary =
     attachments.length > 1
@@ -189,6 +192,47 @@ export const updateMessage = catchAsync(async (req, res) => {
   });
 });
 
+export const markChatMessagesAsRead = catchAsync(async (req, res) => {
+  const { chatId } = req.params;
+  const currentUserId = req.user._id;
+
+  const chat = await Chat.findOne(buildAuthorizedChatQuery(chatId, currentUserId));
+  if (!chat) {
+    const chatExists = await Chat.exists({ _id: chatId });
+    if (!chatExists) {
+      throw new AppError(404, "Chat not found");
+    }
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      "You are not authorized to access this chat"
+    );
+  }
+
+  let didChange = false;
+  for (const message of chat.messages) {
+    const senderId = message.user?.toString();
+    if (senderId && senderId !== currentUserId.toString() && !message.read) {
+      message.read = true;
+      didChange = true;
+    }
+  }
+
+  if (didChange) {
+    await chat.save();
+  }
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: didChange
+      ? "Chat marked as read"
+      : "Chat already marked as read",
+    success: true,
+    data: {
+      read: true,
+    },
+  });
+});
+
 export const deleteMessage = catchAsync(async (req, res) => {
   const { chatId, messageId } = req.body;
 
@@ -215,8 +259,8 @@ export const deleteMessage = catchAsync(async (req, res) => {
 
 export const getChatForUser = catchAsync(async (req, res) => {
   const user = req.user._id;
+  const currentUserId = req.user._id.toString();
   const chat = await Chat.find({ $or: [{ user: user }, { seller: user }] })
-    .select({ messages: { $slice: -1 } }) // Only include last message
     .populate({
       path: "seller",
       select: "name storeName avatar",
@@ -233,13 +277,13 @@ export const getChatForUser = catchAsync(async (req, res) => {
       path: "messages.productId",
       select: "name price images",
     })
-    .sort({ updatedAt: -1 }).lean();   // 🔥 THIS IS THE FIX; // Sort by last updated time
-      // Step 2: Extract seller IDs
+    .sort({ updatedAt: -1 })
+    .lean();
   const sellerIds = [
     ...new Set(
       chat
-        .filter(chat => chat.seller?._id)
-        .map(chat => chat.seller._id.toString())
+        .filter((chat) => chat.seller?._id)
+        .map((chat) => chat.seller._id.toString())
     ),
   ];
 
@@ -250,27 +294,36 @@ export const getChatForUser = catchAsync(async (req, res) => {
     .select("name owner")
     .lean();
 
-    console.log(shops)
-
   // Step 4: Create map
   const shopMap = {};
-  shops.forEach(shop => {
+  shops.forEach((shop) => {
     shopMap[shop.owner.toString()] = shop.name;
   });
 
   // Step 5: Attach shopName to seller
-  const updatedChats = chat.map(chat => {
+  const updatedChats = chat.map((chat) => {
+    const allMessages = Array.isArray(chat.messages) ? chat.messages : [];
+    const unreadCount = allMessages.filter((message) => {
+      const senderId =
+        typeof message?.user === "object"
+          ? message.user?._id?.toString()
+          : message?.user?.toString();
+
+      return senderId && senderId !== currentUserId && message?.read === false;
+    }).length;
+
     if (chat.seller && shopMap[chat.seller._id.toString()]) {
       chat.seller.shopName = shopMap[chat.seller._id.toString()];
-      console.log(chat.seller.shopName)
     } else {
-      console.log(chat.seller)
       chat.seller.shopName = null;
     }
-    console.log(chat.seller)
+
+    chat.unreadCount = unreadCount;
+    chat.messages =
+      allMessages.length > 0 ? [allMessages[allMessages.length - 1]] : [];
+
     return chat;
   });
-  console.log(updatedChats)
   sendResponse(res, {
     statusCode: httpStatus.OK,
     message: "Chat retrieved successfully",
@@ -489,7 +542,8 @@ export const sendMessageToAllSellers = catchAsync(async (req, res) => {
 
 export const getSingleChat = catchAsync(async (req, res) => {
   const { chatId } = req.params;
-  const chat = await Chat.findById(chatId)
+  const currentUserId = req.user._id;
+  const chat = await Chat.findOne(buildAuthorizedChatQuery(chatId, currentUserId))
     .populate({
       path: "seller",
       select: "name avatar",
@@ -506,7 +560,38 @@ export const getSingleChat = catchAsync(async (req, res) => {
       path: "messages.productId",
       select: "name price images",
     });
-  if (!chat) throw new AppError(404, "Chat not found");
+  if (!chat) {
+    const chatExists = await Chat.exists({ _id: chatId });
+    if (!chatExists) {
+      throw new AppError(404, "Chat not found");
+    }
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      "You are not authorized to access this chat"
+    );
+  }
+
+  let didChange = false;
+  for (const message of chat.messages) {
+    const senderId =
+      typeof message.user === "object"
+        ? message.user?._id?.toString()
+        : message.user?.toString();
+
+    if (senderId && senderId !== currentUserId.toString() && !message.read) {
+      message.read = true;
+      didChange = true;
+    }
+  }
+
+  if (didChange) {
+    await chat.save();
+    await chat.populate({
+      path: "messages.user",
+      select: "name avatar",
+    });
+  }
+
   sendResponse(res, {
     statusCode: httpStatus.OK,
     message: "Chat retrieved successfully",
