@@ -21,6 +21,7 @@ import chatRoute from "../route/chat.route.js";
 import serviceRoute from "../route/service.routes.js"
 import notificationRoute from "../route/notification.route.js";
 import searchRoute from "../route/search.route.js";
+import textRoute from "../route/text.route.js";
 
 const router = express.Router();
 
@@ -46,5 +47,6 @@ router.use("/chat", chatRoute);
 router.use("/service", serviceRoute);
 router.use("/notifications", notificationRoute);
 router.use("/search", searchRoute);
+router.use("/text", textRoute);
 
 export default router;
