@@ -29,12 +29,19 @@ export const addToCart = catchAsync(async (req, res) => {
     }
   }
 
-  // Recalculate total
+  // Recalculate total and filter missing products
   let total = 0;
+  const validItems = [];
+  
   for (let item of cart.items) {
     const p = await Product.findById(item.product);
-    total += p.price * item.quantity;
+    if (p) {
+      total += p.price * item.quantity;
+      validItems.push(item);
+    }
   }
+  
+  cart.items = validItems;
   cart.totalAmount = total;
   await cart.save();
 
@@ -74,12 +81,19 @@ export const updateCart = catchAsync(async (req, res) => {
     cart.items = cart.items.filter((i) => i.product.toString() !== product);
   }
 
-  // Recalculate total (similar to add)
+  // Recalculate total and filter missing products (self-heal)
   let total = 0;
+  const validItems = [];
+
   for (let item of cart.items) {
     const p = await Product.findById(item.product);
-    total += p.price * item.quantity;
+    if (p) {
+      total += p.price * item.quantity;
+      validItems.push(item);
+    }
   }
+  
+  cart.items = validItems;
   cart.totalAmount = total;
   await cart.save();
 
