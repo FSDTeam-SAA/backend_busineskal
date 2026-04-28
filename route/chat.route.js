@@ -2,6 +2,7 @@ import express from "express";
 import {
   createChat,
   sendMessage,
+  sendProductInquiry,
   updateMessage,
   deleteMessage,
   getChatForUser,
@@ -10,6 +11,7 @@ import {
   getMyCustomersFromOrders,
   sendMessageToAllSellers,
   markChatMessagesAsRead,
+  markSellerFlag,
 } from "../controller/chat.controller.js";
 import { protect, isAdmin } from "../middleware/auth.middleware.js";
 import upload from "../middleware/multer.middleware.js";
@@ -21,12 +23,22 @@ router.use(protect);
 router.get("/", getChatForUser);
 router.get("/my-sellers", getMySellersFromOrders);
 router.get("/my-customers", getMyCustomersFromOrders);
-router.get("/:chatId", getSingleChat);
-router.patch("/:chatId/read", markChatMessagesAsRead);
 
 router.post("/", createChat);
 router.post("/message", upload.array("files", 10), sendMessage);
+router.post(
+  "/inquiry",
+  upload.fields([
+    { name: "files", maxCount: 10 },
+    { name: "attachments", maxCount: 10 },
+    { name: "screenshots", maxCount: 10 },
+  ]),
+  sendProductInquiry,
+);
 router.post("/broadcast/sellers", isAdmin, sendMessageToAllSellers);
+router.patch("/:chatId/read", markChatMessagesAsRead);
+router.patch("/:chatId/seller-flag", markSellerFlag);
+router.get("/:chatId", getSingleChat);
 router.patch("/message", updateMessage);
 router.delete("/message", deleteMessage);
 

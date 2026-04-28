@@ -212,7 +212,7 @@ export const getAllSuppliers = catchAsync(async (req, res) => {
   const [suppliers, total] = await Promise.all([
     User.find(filter)
       .select(
-        "name companyName firstName lastName email image avatar logo country rating totalReviews verified"
+        "name companyName firstName lastName email image avatar logo country rating totalReviews verified sellerFlag"
       )
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -240,6 +240,7 @@ export const getAllSuppliers = catchAsync(async (req, res) => {
     rating: supplier.rating || 0,
     totalReviews: supplier.totalReviews || 0,
     verified: supplier.verified || false,
+    sellerFlag: supplier.sellerFlag || null,
   }));
 
   sendResponse(res, {
@@ -270,7 +271,7 @@ export const getSingleSupplier = catchAsync(async (req, res) => {
     role: "seller",
   })
     .select(
-      "name companyName firstName lastName email image avatar logo country rating totalReviews verified phone description address"
+      "name companyName firstName lastName email image avatar logo country rating totalReviews verified phone description address sellerFlag"
     )
     .lean();
 
@@ -297,6 +298,7 @@ export const getSingleSupplier = catchAsync(async (req, res) => {
     rating: supplier.rating || 0,
     totalReviews: supplier.totalReviews || 0,
     verified: supplier.verified || false,
+    sellerFlag: supplier.sellerFlag || null,
     phone: supplier.phone || "",
     description: supplier.description || "",
     address: supplier.address || "",

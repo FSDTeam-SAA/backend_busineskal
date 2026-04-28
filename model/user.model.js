@@ -88,6 +88,32 @@ const userSchema = new Schema(
       enum: ["user", "admin", "seller"],
       default: "user",
     },
+    sellerFlag: {
+      color: {
+        type: String,
+        enum: ["red", "yellow", "green", ""],
+        default: "",
+      },
+      reason: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+      markedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      chatId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Chat",
+        default: null,
+      },
+      updatedAt: {
+        type: Date,
+        default: null,
+      },
+    },
     verificationInfo: {
       verified: { type: Boolean, default: false },
       token: { type: String, default: "" },

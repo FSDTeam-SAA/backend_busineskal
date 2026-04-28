@@ -25,9 +25,25 @@ const messageSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    messageCategory: {
+      type: String,
+      enum: ["standard", "price_request", "inquiry"],
+      default: "standard",
+    },
     productId: {
       type: Schema.Types.ObjectId,
       ref: "Product",
+    },
+    inquiry: {
+      detailedRequirements: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+      recommendMatchingSuppliers: {
+        type: Boolean,
+        default: false,
+      },
     },
     user: {
       type: Schema.Types.ObjectId,
