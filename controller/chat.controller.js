@@ -721,7 +721,6 @@ export const getMyCustomersFromOrders = catchAsync(async (req, res) => {
 
   const chat = await Chat.find({
     seller: req.user._id,
-    user: { $in: customerIds },
   })
     .select({ messages: { $slice: -1 } })
     .populate({

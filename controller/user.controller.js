@@ -23,7 +23,7 @@ export const getProfile = catchAsync(async (req, res) => {
 });
 
 export const updateProfile = catchAsync(async (req, res) => {
-  const { name, phone, address, dob } = req.body;
+  const { name, phone, address, dob, gender } = req.body;
 
   const user = await User.findById(req.user._id);
 
@@ -31,6 +31,7 @@ export const updateProfile = catchAsync(async (req, res) => {
   if (phone) user.phone = phone;
   if (address) user.address = address;
   if (dob) user.dob = dob;
+  if (gender) user.gender = gender;
 
   if (req.file) {
     const upload = await uploadOnCloudinary(req.file.buffer);
