@@ -11,6 +11,7 @@ import { uploadOnCloudinary } from "../utils/commonMethod.js";
 import { Shop } from "../model/shop.model.js";
 import { createNotification, getUserDisplayName } from "../utils/notification.js";
 import { Product } from "../model/product.model.js";
+import { Service } from "../model/service.model.js";
 
 const toBoolean = (value) => value === true || value === "true";
 const buildAuthorizedChatQuery = (chatId, userId) => ({
@@ -130,6 +131,7 @@ const createChatNotificationForMessage = async ({
   attachments = [],
   askPrice = false,
   productId = null,
+  serviceId = null,
   messageCategory = "standard",
 }) => {
   const senderName = getUserDisplayName(sender);
@@ -157,7 +159,7 @@ const createChatNotificationForMessage = async ({
   if (messageCategory === "inquiry") {
     notificationTitle = "New product inquiry";
     notificationType = "product_inquiry";
-    notificationMessage = `${senderName} sent an inquiry${productId ? " about a product" : ""}.`;
+    notificationMessage = `${senderName} sent an inquiry${(productId || serviceId) ? (productId ? " about a product" : " about a service") : ""}.`;
   }
 
   await createNotification({
@@ -165,6 +167,7 @@ const createChatNotificationForMessage = async ({
     actor: sender._id,
     chat: chat._id,
     product: productId || null,
+    service: serviceId || null,
     type: notificationType,
     title: notificationTitle,
     message: notificationMessage,
@@ -307,29 +310,43 @@ export const sendProductInquiry = catchAsync(async (req, res) => {
     );
   }
 
-  const product = await Product.findById(productId).populate(
+  // Try to find in Product model first
+  let isProduct = true;
+  let targetItem = await Product.findById(productId).populate(
     "vendor",
     "name storeName role"
   );
 
-  if (!product) {
-    throw new AppError(httpStatus.NOT_FOUND, "Product not found");
+  // If not found in Product, try Service model
+  if (!targetItem) {
+    targetItem = await Service.findById(productId).populate(
+      "vendor",
+      "name storeName role"
+    );
+    isProduct = false;
   }
 
-  if (!product.vendor?._id) {
-    throw new AppError(httpStatus.BAD_REQUEST, "Product seller not found");
+  if (!targetItem) {
+    throw new AppError(httpStatus.NOT_FOUND, "Product or Service not found");
   }
 
-  if (product.vendor._id.toString() === req.user._id.toString()) {
+  if (!targetItem.vendor?._id) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      "You cannot send an inquiry to your own product"
+      "Product or Service seller not found"
+    );
+  }
+
+  if (targetItem.vendor._id.toString() === req.user._id.toString()) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "You cannot send an inquiry to your own item"
     );
   }
 
   const chat = await findOrCreateDirectChat({
     userId: req.user._id,
-    sellerId: product.vendor._id,
+    sellerId: targetItem.vendor._id,
   });
 
   const files = getUploadedFilesFromRequest(req);
@@ -343,7 +360,7 @@ export const sendProductInquiry = catchAsync(async (req, res) => {
     attachments,
     askPrice: false,
     messageCategory: "inquiry",
-    productId: product._id,
+    productId: targetItem._id,
     inquiry: {
       detailedRequirements: inquiryText,
       recommendMatchingSuppliers: recommendFlag,
@@ -362,7 +379,8 @@ export const sendProductInquiry = catchAsync(async (req, res) => {
     recipientId: chat.seller,
     text: inquiryText,
     attachments,
-    productId: product._id,
+    productId: isProduct ? targetItem._id : null,
+    serviceId: !isProduct ? targetItem._id : null,
     messageCategory: "inquiry",
   });
 
@@ -372,7 +390,7 @@ export const sendProductInquiry = catchAsync(async (req, res) => {
     message: "Inquiry sent successfully",
     data: {
       chatId: chat._id,
-      productId: product._id,
+      productId: targetItem._id,
     },
   });
 });
