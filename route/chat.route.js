@@ -12,6 +12,9 @@ import {
   sendMessageToAllSellers,
   markChatMessagesAsRead,
   markSellerFlag,
+  deleteChat,
+  blockUser,
+  unblockUser,
 } from "../controller/chat.controller.js";
 import { protect, isAdmin } from "../middleware/auth.middleware.js";
 import upload from "../middleware/multer.middleware.js";
@@ -41,5 +44,9 @@ router.patch("/:chatId/seller-flag", markSellerFlag);
 router.get("/:chatId", getSingleChat);
 router.patch("/message", updateMessage);
 router.delete("/message", deleteMessage);
+
+router.patch("/:chatId/delete", deleteChat);
+router.patch("/block/:userId", blockUser);
+router.patch("/unblock/:userId", unblockUser);
 
 export default router;

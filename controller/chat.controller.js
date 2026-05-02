@@ -218,6 +218,29 @@ export const sendMessage = catchAsync(async (req, res) => {
       "You are not authorized to send message in this chat"
     );
   }
+
+  const recipientId = chat.user.toString() === currentUserId.toString() ? chat.seller : chat.user;
+
+  // Check if blocked
+  const [me, peer] = await Promise.all([
+    User.findById(currentUserId).select("blockedUsers"),
+    User.findById(recipientId).select("blockedUsers"),
+  ]);
+
+  if (me.blockedUsers.includes(recipientId)) {
+    throw new AppError(httpStatus.FORBIDDEN, "You have blocked this user. Unblock to send messages.");
+  }
+  if (peer.blockedUsers.includes(currentUserId)) {
+    throw new AppError(httpStatus.FORBIDDEN, "This user has blocked you.");
+  }
+
+  // If chat was previously deleted by someone, and a new message is sent, 
+  // should it reappear? Usually yes, if the peer sends a message.
+  // If the sender previously deleted it, sending a message should restore it for them.
+  if (chat.deletedBy.includes(currentUserId)) {
+    chat.deletedBy = chat.deletedBy.filter(id => id.toString() !== currentUserId.toString());
+  }
+
   const files = getUploadedFilesFromRequest(req);
   const attachments = await uploadChatAttachments(files);
 
@@ -241,8 +264,12 @@ export const sendMessage = catchAsync(async (req, res) => {
 
   await emitLatestChatMessage(chat._id, chat.user, chat.seller);
 
-  const recipientId =
-    chat.user.toString() === currentUserId.toString() ? chat.seller : chat.user;
+  // Restore chat for recipient if they had deleted it
+  if (chat.deletedBy.includes(recipientId)) {
+    chat.deletedBy = chat.deletedBy.filter(id => id.toString() !== recipientId.toString());
+    await chat.save();
+  }
+
   await createChatNotificationForMessage({
     chat,
     sender: req.user,
@@ -510,7 +537,10 @@ export const deleteMessage = catchAsync(async (req, res) => {
 export const getChatForUser = catchAsync(async (req, res) => {
   const user = req.user._id;
   const currentUserId = req.user._id.toString();
-  const chat = await Chat.find({ $or: [{ user: user }, { seller: user }] })
+  const chat = await Chat.find({ 
+    $or: [{ user: user }, { seller: user }],
+    deletedBy: { $ne: user }
+  })
     .populate({
       path: "seller",
       select: SELLER_CHAT_SELECT,
@@ -680,6 +710,7 @@ export const getMySellersFromOrders = catchAsync(async (req, res) => {
   const chat = await Chat.find({
     user: req.user._id,
     seller: { $in: sellerIds },
+    deletedBy: { $ne: req.user._id }
   })
     .select({ messages: { $slice: -1 } })
     .populate({
@@ -721,6 +752,7 @@ export const getMyCustomersFromOrders = catchAsync(async (req, res) => {
 
   const chat = await Chat.find({
     seller: req.user._id,
+    deletedBy: { $ne: req.user._id }
   })
     .select({ messages: { $slice: -1 } })
     .populate({
@@ -832,7 +864,6 @@ export const getSingleChat = catchAsync(async (req, res) => {
       didChange = true;
     }
   }
-
   if (didChange) {
     await chat.save();
     await chat.populate({
@@ -841,10 +872,79 @@ export const getSingleChat = catchAsync(async (req, res) => {
     });
   }
 
+  const chatObj = chat.toObject();
+  const recipientId = chat.user.toString() === currentUserId.toString() ? chat.seller : chat.user;
+
+  // Check block status
+  const [me, peer] = await Promise.all([
+    User.findById(currentUserId).select("blockedUsers"),
+    User.findById(recipientId).select("blockedUsers"),
+  ]);
+
+  chatObj.isBlockedByMe = me.blockedUsers.includes(recipientId);
+  chatObj.isBlockedByPeer = peer.blockedUsers.includes(currentUserId);
+
   sendResponse(res, {
     statusCode: httpStatus.OK,
     message: "Chat retrieved successfully",
     success: true,
-    data: chat,
+    data: chatObj,
   });
 });
+
+export const deleteChat = catchAsync(async (req, res) => {
+  const { chatId } = req.params;
+  const chat = await Chat.findOne(buildAuthorizedChatQuery(chatId, req.user._id));
+  if (!chat) throw new AppError(404, "Chat not found");
+
+  if (!chat.deletedBy.includes(req.user._id)) {
+    chat.deletedBy.push(req.user._id);
+    await chat.save();
+  }
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Chat deleted successfully",
+  });
+});
+
+export const blockUser = catchAsync(async (req, res) => {
+  const { userId } = req.params;
+  const currentUserId = req.user._id;
+
+  if (userId === currentUserId.toString()) {
+    throw new AppError(400, "You cannot block yourself");
+  }
+
+  const userToBlock = await User.findById(userId);
+  if (!userToBlock) throw new AppError(404, "User not found");
+
+  const currentUser = await User.findById(currentUserId);
+  if (!currentUser.blockedUsers.includes(userId)) {
+    currentUser.blockedUsers.push(userId);
+    await currentUser.save();
+  }
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "User blocked successfully",
+  });
+});
+
+export const unblockUser = catchAsync(async (req, res) => {
+  const { userId } = req.params;
+  const currentUserId = req.user._id;
+
+  const currentUser = await User.findById(currentUserId);
+  currentUser.blockedUsers = currentUser.blockedUsers.filter(id => id.toString() !== userId.toString());
+  await currentUser.save();
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "User unblocked successfully",
+  });
+});
+

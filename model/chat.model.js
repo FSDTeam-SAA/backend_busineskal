@@ -79,6 +79,12 @@ const chatSchema = new Schema(
       required: true,
     },
     messages: [messageSchema],
+    deletedBy: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
   { timestamps: true }
 );
