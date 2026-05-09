@@ -85,6 +85,12 @@ const chatSchema = new Schema(
         ref: "User",
       },
     ],
+    savedBy: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
   { timestamps: true }
 );

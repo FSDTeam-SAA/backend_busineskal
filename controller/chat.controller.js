@@ -619,6 +619,9 @@ export const getChatForUser = catchAsync(async (req, res) => {
     chat.unreadCount = unreadCount;
     chat.messages =
       allMessages.length > 0 ? [allMessages[allMessages.length - 1]] : [];
+    chat.isSaved = Array.isArray(chat.savedBy)
+      ? chat.savedBy.some((id) => id?.toString() === currentUserId)
+      : false;
 
     return chat;
   });
@@ -901,6 +904,9 @@ export const getSingleChat = catchAsync(async (req, res) => {
 
   chatObj.isBlockedByMe = me.blockedUsers.includes(recipientId);
   chatObj.isBlockedByPeer = peer.blockedUsers.includes(currentUserId);
+  chatObj.isSaved = Array.isArray(chat.savedBy)
+    ? chat.savedBy.some((id) => id?.toString() === currentUserId.toString())
+    : false;
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -924,6 +930,120 @@ export const deleteChat = catchAsync(async (req, res) => {
     statusCode: 200,
     success: true,
     message: "Chat deleted successfully",
+  });
+});
+
+export const saveChat = catchAsync(async (req, res) => {
+  const { chatId } = req.params;
+  const chat = await Chat.findOne(buildAuthorizedChatQuery(chatId, req.user._id));
+  if (!chat) {
+    const chatExists = await Chat.exists({ _id: chatId });
+    if (!chatExists) throw new AppError(404, "Chat not found");
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      "You are not authorized to save this chat",
+    );
+  }
+
+  if (!chat.savedBy.some((id) => id.toString() === req.user._id.toString())) {
+    chat.savedBy.push(req.user._id);
+    await chat.save();
+  }
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Chat saved successfully",
+    data: { isSaved: true },
+  });
+});
+
+export const unsaveChat = catchAsync(async (req, res) => {
+  const { chatId } = req.params;
+  const chat = await Chat.findOne(buildAuthorizedChatQuery(chatId, req.user._id));
+  if (!chat) {
+    const chatExists = await Chat.exists({ _id: chatId });
+    if (!chatExists) throw new AppError(404, "Chat not found");
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      "You are not authorized to unsave this chat",
+    );
+  }
+
+  chat.savedBy = chat.savedBy.filter(
+    (id) => id.toString() !== req.user._id.toString(),
+  );
+  await chat.save();
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Chat unsaved successfully",
+    data: { isSaved: false },
+  });
+});
+
+export const getSavedChats = catchAsync(async (req, res) => {
+  const userId = req.user._id;
+  const currentUserId = userId.toString();
+
+  const chats = await Chat.find({
+    $or: [{ user: userId }, { seller: userId }],
+    savedBy: userId,
+    deletedBy: { $ne: userId },
+  })
+    .populate({ path: "seller", select: SELLER_CHAT_SELECT })
+    .populate({ path: "user", select: "name avatar" })
+    .populate({ path: "messages.user", select: "name avatar" })
+    .populate({ path: "messages.productId", select: CHAT_PRODUCT_POPULATE })
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  const sellerIds = [
+    ...new Set(
+      chats
+        .filter((c) => c.seller?._id)
+        .map((c) => c.seller._id.toString()),
+    ),
+  ];
+
+  const shops = await Shop.find({ owner: { $in: sellerIds } })
+    .select("name owner")
+    .lean();
+  const shopMap = {};
+  shops.forEach((shop) => {
+    shopMap[shop.owner.toString()] = shop.name;
+  });
+
+  const updatedChats = chats.map((chat) => {
+    const allMessages = Array.isArray(chat.messages) ? chat.messages : [];
+    const unreadCount = allMessages.filter((message) => {
+      const senderId =
+        typeof message?.user === "object"
+          ? message.user?._id?.toString()
+          : message?.user?.toString();
+      return senderId && senderId !== currentUserId && message?.read === false;
+    }).length;
+
+    if (chat.seller && shopMap[chat.seller._id.toString()]) {
+      chat.seller.shopName = shopMap[chat.seller._id.toString()];
+    } else if (chat.seller) {
+      chat.seller.shopName = null;
+    }
+
+    chat.unreadCount = unreadCount;
+    chat.messages =
+      allMessages.length > 0 ? [allMessages[allMessages.length - 1]] : [];
+    chat.isSaved = true;
+
+    return chat;
+  });
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: "Saved chats retrieved successfully",
+    success: true,
+    data: updatedChats,
   });
 });
 

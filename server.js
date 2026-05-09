@@ -46,6 +46,37 @@ app.get("/", (req, res) => {
 app.use(globalErrorHandler);
 app.use(notFound);
 
+// userId -> Set<socketId>. Tracks live presence across multiple devices/tabs.
+const onlineUsers = new Map();
+
+const markUserOnline = (userId, socket) => {
+  if (!userId) return;
+  const key = String(userId);
+  let sockets = onlineUsers.get(key);
+  const wasOffline = !sockets || sockets.size === 0;
+  if (!sockets) {
+    sockets = new Set();
+    onlineUsers.set(key, sockets);
+  }
+  sockets.add(socket.id);
+  socket.data.userId = key;
+  if (wasOffline) {
+    io.emit("presence:online", { userId: key });
+  }
+};
+
+const markSocketOffline = (socket) => {
+  const userId = socket.data?.userId;
+  if (!userId) return;
+  const sockets = onlineUsers.get(userId);
+  if (!sockets) return;
+  sockets.delete(socket.id);
+  if (sockets.size === 0) {
+    onlineUsers.delete(userId);
+    io.emit("presence:offline", { userId });
+  }
+};
+
 io.on("connection", (socket) => {
   console.log("A client connected:", socket.id);
 
@@ -53,6 +84,8 @@ io.on("connection", (socket) => {
     if (userId) {
       socket.join(getChatRoom(userId));
       socket.join(getNotificationRoom(userId));
+      markUserOnline(userId, socket);
+      socket.emit("presence:list", { userIds: Array.from(onlineUsers.keys()) });
       console.log(`Client ${socket.id} joined rooms for user: ${userId}`);
     }
   };
@@ -67,6 +100,10 @@ io.on("connection", (socket) => {
 
   socket.on("joinUserRoom", (userId) => {
     joinUserRooms(userId);
+  });
+
+  socket.on("presence:request", () => {
+    socket.emit("presence:list", { userIds: Array.from(onlineUsers.keys()) });
   });
 
   socket.on("joinAlerts", () => {
@@ -89,6 +126,7 @@ io.on("connection", (socket) => {
   socket.on("call:signal", (payload) => relayCallEvent("call:signal", payload));
 
   socket.on("disconnect", () => {
+    markSocketOffline(socket);
     console.log("Client disconnected:", socket.id);
   });
 });

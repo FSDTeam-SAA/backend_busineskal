@@ -15,6 +15,9 @@ import {
   deleteChat,
   blockUser,
   unblockUser,
+  saveChat,
+  unsaveChat,
+  getSavedChats,
 } from "../controller/chat.controller.js";
 import { protect, isAdmin } from "../middleware/auth.middleware.js";
 import upload from "../middleware/multer.middleware.js";
@@ -24,6 +27,7 @@ const router = express.Router();
 router.use(protect);
 
 router.get("/", getChatForUser);
+router.get("/saved", getSavedChats);
 router.get("/my-sellers", getMySellersFromOrders);
 router.get("/my-customers", getMyCustomersFromOrders);
 
@@ -46,6 +50,8 @@ router.patch("/message", updateMessage);
 router.delete("/message", deleteMessage);
 
 router.patch("/:chatId/delete", deleteChat);
+router.patch("/:chatId/save", saveChat);
+router.patch("/:chatId/unsave", unsaveChat);
 router.patch("/block/:userId", blockUser);
 router.patch("/unblock/:userId", unblockUser);
 
