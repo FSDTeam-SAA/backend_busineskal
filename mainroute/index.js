@@ -23,6 +23,7 @@ import notificationRoute from "../route/notification.route.js";
 import searchRoute from "../route/search.route.js";
 import textRoute from "../route/text.route.js";
 import countryRoute from "../route/country.route.js";
+import callRoute from "../route/call.route.js";
 
 const router = express.Router();
 
@@ -50,5 +51,6 @@ router.use("/notifications", notificationRoute);
 router.use("/search", searchRoute);
 router.use("/text", textRoute);
 router.use("/country", countryRoute);
+router.use("/call", callRoute);
 
 export default router;
