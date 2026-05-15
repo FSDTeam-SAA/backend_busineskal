@@ -12,6 +12,145 @@ import sendResponse from "../utils/sendResponse.js";
 import { sendEmail } from "../utils/sendEmail.js";
 import { User } from "./../model/user.model.js";
 import { getUserDisplayName, notifyAdmins } from "../utils/notification.js";
+import admin, { isInitialized } from "../utils/firebaseAdmin.js";
+
+export const googleLogin = catchAsync(async (req, res, next) => {
+  const { idToken } = req.body;
+
+  if (!isInitialized) {
+    return next(new AppError(500, "Firebase Admin not configured on server"));
+  }
+
+  if (!idToken) {
+    return next(new AppError(400, "Google idToken is required"));
+  }
+
+  // Verify Firebase ID Token
+  let decodedToken;
+  try {
+    decodedToken = await admin.auth().verifyIdToken(idToken);
+  } catch (error) {
+    return next(new AppError(401, "Invalid Google token"));
+  }
+
+  const { email, name, picture, uid } = decodedToken;
+  const normalizedEmail =
+    typeof email === "string" ? email.trim().toLowerCase() : "";
+
+  if (!normalizedEmail) {
+    return next(new AppError(400, "Google account email is missing"));
+  }
+
+  const authProvider = decodedToken.firebase?.sign_in_provider || "google.com";
+
+  // Check if user exists
+  let user = await User.findOne({ email: normalizedEmail });
+
+  if (!user && uid) {
+    user = await User.findOne({ firebaseUid: uid });
+  }
+
+  if (!user) {
+    // Create new user if not exists
+    user = await User.create({
+      name: name || normalizedEmail.split("@")[0],
+      email: normalizedEmail,
+      isEmailVerified: true,
+      firebaseUid: uid,
+      authProvider,
+      avatar: {
+        url: picture || "",
+      },
+      role: "user",
+    });
+  } else {
+    let shouldSaveUser = false;
+
+    if (!user.firebaseUid && uid) {
+      user.firebaseUid = uid;
+      shouldSaveUser = true;
+    }
+
+    if (!user.authProvider) {
+      user.authProvider = authProvider;
+      shouldSaveUser = true;
+    }
+
+    if (!user.name && name) {
+      user.name = name;
+      shouldSaveUser = true;
+    }
+
+    if (!user.avatar?.url && picture) {
+      user.avatar = {
+        ...user.avatar,
+        url: picture,
+      };
+      shouldSaveUser = true;
+    }
+
+    if (!user.isEmailVerified) {
+      user.isEmailVerified = true;
+      shouldSaveUser = true;
+    }
+
+    if (shouldSaveUser) {
+      await user.save();
+    }
+  }
+
+  if (user.role === "seller" && user.vendorStatus === "pending") {
+    return next(
+      new AppError(
+        403,
+        "Your seller status is pending. Please wait for admin approval.",
+      ),
+    );
+  }
+
+  const jwtPayload = {
+    _id: user._id,
+    email: user.email,
+    role: user.role,
+  };
+
+  const accessToken = createToken(
+    jwtPayload,
+    process.env.JWT_ACCESS_SECRET,
+    process.env.JWT_ACCESS_EXPIRES_IN
+  );
+
+  const refreshToken = createToken(
+    jwtPayload,
+    process.env.JWT_REFRESH_SECRET,
+    process.env.JWT_REFRESH_EXPIRES_IN
+  );
+
+  user.refreshToken = refreshToken;
+  await user.save();
+
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "none",
+    maxAge: 1000 * 60 * 60 * 24 * 365,
+  });
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Google login successful",
+    data: {
+      accessToken,
+      refreshToken,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      _id: user._id,
+      shopId: user.shopId,
+    },
+  });
+});
 
 export const register = catchAsync(async (req, res, next) => {
   const { name, email, password, role } = req.body;

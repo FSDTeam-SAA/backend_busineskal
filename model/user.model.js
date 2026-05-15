@@ -17,6 +17,16 @@ const userSchema = new Schema(
       type: String,
       trim: true,
     },
+    firebaseUid: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    authProvider: {
+      type: String,
+      trim: true,
+      default: "email",
+    },
     password: { type: String, select: false },
     username: {
       type: String,
