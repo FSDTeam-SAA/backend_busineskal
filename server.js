@@ -629,7 +629,7 @@ const startServer = async () => {
     if (!process.env.MONGO_DB_URL) throw new Error("MONGO_DB_URL is required");
     await mongoose.connect(process.env.MONGO_DB_URL);
     console.log("MongoDB connected");
-    server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+    server.listen(PORT, process.env.HOST || "0.0.0.0", () => console.log(`Server is running on port ${PORT}`));
   } catch (err) {
     console.error("Server startup failed:", err.message);
     process.exit(1);
