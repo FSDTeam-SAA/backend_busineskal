@@ -14,8 +14,8 @@ export async function getLandingCatalogue(models = { Product, Service, Category,
     .populate({ path: "category", select: "name isActive" })
     .sort({ createdAt: -1, _id: -1 }).limit(100).maxTimeMS(5000).lean();
   const [productRows, serviceRows] = await Promise.all([
-    query(models.Product, "title detailedDescription price thumbnail photos country packSize vendor category"),
-    query(models.Service, "title description images country vendor category"),
+    query(models.Product, "title detailedDescription price thumbnail photos country packSize vendor category minOrderQty deliveryTimeDays stock soldCount rating reviewsCount createdAt"),
+    query(models.Service, "title description images country vendor category rating totalReviews createdAt"),
   ]);
   const suppliers = new Map();
   const listings = [];
@@ -46,6 +46,15 @@ export async function getLandingCatalogue(models = { Product, Service, Category,
         tag: "Verified listing",
         description: row.detailedDescription || row.description || "Contact the supplier for more information.",
         type,
+        createdAt: row.createdAt || null,
+        rating: Number.isFinite(row.rating) ? row.rating : 0,
+        reviewsCount: Math.max(0, row.reviewsCount || row.totalReviews || 0),
+        ...(type === "Products" ? {
+          minOrderQty: row.minOrderQty || 1,
+          deliveryTimeDays: row.deliveryTimeDays || 0,
+          stock: Math.max(0, row.stock || 0),
+          soldCount: Math.max(0, row.soldCount || 0),
+        } : {}),
       });
     }
   }
