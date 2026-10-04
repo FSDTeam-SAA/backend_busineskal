@@ -8,7 +8,7 @@ import globalErrorHandler from "../middleware/globalErrorHandler.js";
 test("catalogue queries only verified records and publishes explicit public fields", async () => {
   const vendor = { _id: "vendor-1", storeName: "Actual supplier", country: "Bangladesh", email: "private@example.com", password: "private", phone: "private" };
   const category = { name: "Actual category" };
-  const product = { _id: "product-1", title: "Actual product", price: 25, packSize: "box", photos: [{ url: "https://example.com/photo.jpg", public_id: "private" }], vendor, category };
+  const product = { _id: "product-1", title: "Actual product", price: 25, packSize: "box", minOrderQty: 12, stock: 40, soldCount: 21, rating: 4.5, reviewsCount: 3, createdAt: "2026-10-04T00:00:00.000Z", photos: [{ url: "https://example.com/photo.jpg", public_id: "private" }], vendor, category };
   const service = { _id: "service-1", title: "Actual service", description: "Actual description", images: { url: "javascript:alert(1)" }, vendor, category };
   const selections = [];
   const populations = [];
@@ -29,9 +29,17 @@ test("catalogue queries only verified records and publishes explicit public fiel
   assert.equal(data.listings.length, 2);
   assert.equal(data.listings[0].name, "Actual product");
   assert.equal(data.listings[0].price, "25");
+  assert.equal(data.listings[0].minOrderQty, 12);
+  assert.equal(data.listings[0].soldCount, 21);
+  assert.equal(data.listings[0].stock, 40);
+  assert.equal(data.listings[0].rating, 4.5);
+  assert.equal(data.listings[0].reviewsCount, 3);
+  assert.equal(data.listings[0].createdAt, product.createdAt);
   assert.equal(data.listings[0].image, "https://example.com/photo.jpg");
   assert.equal(data.listings[1].image, "");
   assert.equal(data.listings[1].price, "On request");
+  assert.equal(data.listings[1].soldCount, undefined);
+  assert.equal(data.listings[1].minOrderQty, undefined);
   assert.deepEqual(data.suppliers, [{ id: "vendor-1", name: "Actual supplier", location: "Bangladesh", types: ["Products", "Services"] }]);
   assert.equal(JSON.stringify(data).includes("private"), false);
   assert.ok(populations.some((config) => config.path === "vendor" && config.match.$or[0].vendorStatus === "approved"));
