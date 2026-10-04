@@ -13,6 +13,7 @@ import { sendEmail } from "../utils/sendEmail.js";
 import { User } from "./../model/user.model.js";
 import { getUserDisplayName, notifyAdmins } from "../utils/notification.js";
 import admin, { isInitialized } from "../utils/firebaseAdmin.js";
+import { emailValue, emailQuery, passwordValue, sellerDetails } from "../utils/accountValidation.js";
 
 export const googleLogin = catchAsync(async (req, res, next) => {
   const { idToken } = req.body;
@@ -99,7 +100,7 @@ export const googleLogin = catchAsync(async (req, res, next) => {
     }
   }
 
-  if (user.role === "seller" && user.vendorStatus === "pending") {
+  if (user.role === "seller" && user.vendorStatus !== "approved") {
     return next(
       new AppError(
         403,
@@ -132,7 +133,7 @@ export const googleLogin = catchAsync(async (req, res, next) => {
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "none",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     maxAge: 1000 * 60 * 60 * 24 * 365,
   });
 
@@ -153,23 +154,30 @@ export const googleLogin = catchAsync(async (req, res, next) => {
 });
 
 export const register = catchAsync(async (req, res, next) => {
-  const { name, email, password, role } = req.body;
+  const { name, role = "user" } = req.body;
+  const email = emailValue(req.body.email);
+  const password = passwordValue(req.body.password);
+  if (!["user", "seller"].includes(role)) throw new AppError(400, "Choose a buyer or seller account.");
+  if (typeof name !== "string" || !name.trim() || name.trim().length > 100) throw new AppError(400, "Please provide your name.");
+  const business = role === "seller" ? sellerDetails(req.body) : {};
 
   if (!name || !email || !password) {
     return next(new AppError(400, "Name, email and password are required"));
   }
 
   // Check existing user
-  const existingUser = await User.findOne({ email });
+  const existingUser = await User.findOne(emailQuery(email));
   if (existingUser) {
     return next(new AppError(409, "Email already registered"));
   }
 
   const user = await User.create({
-    name,
+    name: name.trim(),
     email,
     password,
     role: role || "user",
+    ...business,
+    vendorStatus: "pending",
     isEmailVerified: true,
   });
 
@@ -182,7 +190,7 @@ export const register = catchAsync(async (req, res, next) => {
       metadata: {
         sellerId: user._id.toString(),
       },
-    });
+    }).catch(() => console.warn("Seller registration saved; admin notification could not be delivered."));
   }
 
   sendResponse(res, {
@@ -197,22 +205,24 @@ export const register = catchAsync(async (req, res, next) => {
       name: user.name,
       email: user.email,
       role: user.role,
-      managerStatus: user.managerStatus,
+      vendorStatus: user.vendorStatus,
     },
   });
 });
 
 export const login = catchAsync(async (req, res, next) => {
-  const { email, password } = req.body;
+  const email = emailValue(req.body.email);
+  const { password } = req.body;
+  if (typeof password !== "string" || !password || Buffer.byteLength(password, "utf8") > 72) throw new AppError(400, "Please enter your password.");
 
   if (!email || !password) {
     return next(new AppError(400, "Email and password are required"));
   }
 
   // Explicitly select password
-  const user = await User.findOne({ email }).select("+password");
+  const user = await User.findOne(emailQuery(email)).select("+password");
   if (!user) {
-    return next(new AppError(404, "User not found"));
+    return next(new AppError(401, "Invalid email or password"));
   }
 
   const isPasswordValid = await User.isPasswordMatched(password, user.password);
@@ -227,11 +237,11 @@ export const login = catchAsync(async (req, res, next) => {
     );
   }
 
-  if (user.role === "seller" && user.vendorStatus === "pending") {
+  if (user.role === "seller" && user.vendorStatus !== "approved") {
     return next(
       new AppError(
         403,
-        "Your seller status is pending. Please wait for admin approval.",
+        user.vendorStatus === "rejected" ? "Your seller application was rejected. Please contact support." : "Your seller status is pending. Please wait for admin approval.",
       ),
     );
   }
@@ -262,7 +272,7 @@ export const login = catchAsync(async (req, res, next) => {
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "none",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     maxAge: 1000 * 60 * 60 * 24 * 365,
   });
 
@@ -278,6 +288,7 @@ export const login = catchAsync(async (req, res, next) => {
       role: user.role,
       _id: user._id,
       shopId: user.shopId,
+      vendorStatus: user.vendorStatus,
     },
   });
 });
@@ -399,7 +410,7 @@ export const login = catchAsync(async (req, res, next) => {
 //   res.cookie("refreshToken", refreshToken, {
 //     secure: true,
 //     httpOnly: true,
-//     sameSite: "none",
+//     sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
 //     maxAge: 1000 * 60 * 60 * 24 * 365,
 //   });
 
@@ -418,13 +429,13 @@ export const login = catchAsync(async (req, res, next) => {
 // });
 
 export const forgetPassword = catchAsync(async (req, res, next) => {
-  const { email } = req.body;
+  const email = emailValue(req.body.email);
 
   if (!email) {
     return next(new AppError(400, "Email is required"));
   }
 
-  const user = await User.findOne({ email });
+  const user = await User.findOne(emailQuery(email));
   if (!user) return next(new AppError(404, "User not found"));
 
   const now = Date.now();
@@ -460,7 +471,10 @@ export const forgetPassword = catchAsync(async (req, res, next) => {
 });
 
 export const resetPassword = catchAsync(async (req, res, next) => {
-  const { email, otp, password, confirmPassword } = req.body;
+  const email = emailValue(req.body.email);
+  const password = passwordValue(req.body.password);
+  const { otp, confirmPassword } = req.body;
+  if (typeof otp !== "string" || !/^\d{6}$/.test(otp)) throw new AppError(400, "Please enter your 6-digit reset code.");
 
   if (!email || !otp || !password) {
     return next(new AppError(400, "Email, OTP and password are required"));
@@ -470,7 +484,7 @@ export const resetPassword = catchAsync(async (req, res, next) => {
     return next(new AppError(400, "Passwords do not match"));
   }
 
-  const user = await User.findOne({ email }).select("+password");
+  const user = await User.findOne(emailQuery(email)).select("+password");
   if (!user) return next(new AppError(404, "User not found"));
 
   if (!user.otp?.hash || isOtpExpired(user.otp.expiresAt)) {
@@ -582,10 +596,15 @@ export const refreshToken = catchAsync(async (req, res) => {
     throw new AppError(400, "Refresh token is required");
   }
 
-  const decoded = verifyToken(refreshToken, process.env.JWT_REFRESH_SECRET);
+  let decoded;
+  try { decoded = verifyToken(refreshToken, process.env.JWT_REFRESH_SECRET); }
+  catch { throw new AppError(401, "Invalid or expired refresh token"); }
   const user = await User.findById(decoded._id);
   if (!user || user.refreshToken !== refreshToken) {
     throw new AppError(401, "Invalid refresh token");
+  }
+  if (user.role === "seller" && user.vendorStatus !== "approved") {
+    throw new AppError(403, "Seller approval is required before signing in.");
   }
   const jwtPayload = {
     _id: user._id,

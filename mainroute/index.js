@@ -24,8 +24,10 @@ import searchRoute from "../route/search.route.js";
 import textRoute from "../route/text.route.js";
 import countryRoute from "../route/country.route.js";
 import callRoute from "../route/call.route.js";
+import landingRoute from "../route/landing.route.js";
 
 const router = express.Router();
+router.use("/landing", landingRoute);
 
 // Mounting the routes
 router.use("/auth", authRoute);

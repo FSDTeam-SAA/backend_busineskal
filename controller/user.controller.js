@@ -7,7 +7,27 @@ import sendResponse from "../utils/sendResponse.js";
 import catchAsync from "../utils/catchAsync.js";
 import { Shop } from "../model/shop.model.js";
 import { Product } from "../model/product.model.js";
-import { createNotification } from "../utils/notification.js";
+import { createNotification, notifyAdmins, getUserDisplayName } from "../utils/notification.js";
+import { sellerDetails } from "../utils/accountValidation.js";
+
+export const becomeSeller = catchAsync(async (req, res) => {
+  const details = sellerDetails(req.body);
+  // An atomic transition prevents two concurrent applications from changing
+  // an approved account or notifying admins twice.
+  const user = await User.findOneAndUpdate({ _id: req.user._id, role: "user" }, {
+    $set: { ...details, role: "seller", vendorStatus: "pending", refreshToken: "" },
+  }, { new: true, runValidators: true });
+  if (!user) throw new AppError(409, "This account already has a seller application or cannot become a seller.");
+  await notifyAdmins({
+    actor: user._id, type: "seller_request", title: "New seller application",
+    message: `${getUserDisplayName(user)} applied to become a seller.`,
+    metadata: { sellerId: user._id.toString() },
+  }).catch(() => console.warn("Seller application saved; admin notification could not be delivered."));
+  sendResponse(res, { statusCode: 200, success: true,
+    message: "Seller application submitted. Please wait for admin approval before signing in as a seller.",
+    data: { _id: user._id, role: user.role, vendorStatus: user.vendorStatus },
+  });
+});
 
 
 export const getProfile = catchAsync(async (req, res) => {
@@ -116,8 +136,8 @@ export const updateSellersStatus = catchAsync(async (req, res, next) => {
 
   if (status === "approved" && !user.shopId) {
     const shop = await Shop.create({
-      name: "",
-      description: "",
+      name: user.storeName || user.name || "",
+      description: user.storeDescription || "",
       banner: [],
       certificate: {},
       address: "",
@@ -153,6 +173,7 @@ export const updateSellersStatus = catchAsync(async (req, res, next) => {
     data: {
       _id: user._id,
       managerStatus: user.vendorStatus,
+      vendorStatus: user.vendorStatus,
     },
   });
 });

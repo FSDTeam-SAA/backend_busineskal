@@ -1,4 +1,5 @@
 import { Server } from "socket.io";
+import { corsOptions } from "./corsOptions.js";
 
 let io;
 
@@ -7,10 +8,7 @@ export const getNotificationRoom = (userId) => `notifications_${userId}`;
 
 export const initSocket = (server) => {
   io = new Server(server, {
-    cors: {
-      origin: "*",
-      methods: ["GET", "POST"],
-    },
+    cors: corsOptions,
   });
   return io;
 };

@@ -16,6 +16,7 @@ const userSchema = new Schema(
     email: {
       type: String,
       trim: true,
+      lowercase: true,
     },
     firebaseUid: {
       type: String,
@@ -167,7 +168,7 @@ userSchema.pre("save", async function (next) {
 
   // seller role enforcement
   if (this.isModified("role") && this.role === "seller") {
-    this.managerStatus = "pending";
+    this.vendorStatus = "pending";
   }
 
   next();

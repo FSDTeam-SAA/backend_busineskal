@@ -4,8 +4,7 @@ import handleDuplicateError from "../errors/handleDuplicateError.js";
 import AppError from "./../errors/AppError.js";
 
 const globalErrorHandler = (err, req, res, next) => {
-  console.log({ GlobalError: err });
-  let statusCode = 500;
+  let statusCode = Number.isInteger(err.status) && err.status >= 400 && err.status <= 599 ? err.status : 500;
   let message = err.message;
   let errorSources = [
     {
@@ -40,12 +39,16 @@ const globalErrorHandler = (err, req, res, next) => {
     ];
   }
 
+  const production = process.env.NODE_ENV === "production";
+  if (production && statusCode >= 500) {
+    message = "Something went wrong. Please try again later.";
+    errorSources = [];
+  }
   return res.status(statusCode).json({
     success: false,
     message,
     errorSources,
-    err,
-    stack: err?.stack | null,
+    ...(!production ? { stack: err?.stack ?? null } : {}),
   });
 };
 

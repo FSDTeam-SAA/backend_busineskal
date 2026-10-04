@@ -1,20 +1,17 @@
 import nodemailer from 'nodemailer';
-export const sendEmail = async (to,subject, html) => {
+import AppError from '../errors/AppError.js';
+
+export const sendEmail = async (to, subject, html) => {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    throw new AppError(503, 'Password reset email is temporarily unavailable. Please contact support.');
+  }
   const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
-    auth: {
-      user: 'sajjadhossainx0@gmail.com',
-      pass: 'vmmlospccbvrttnc',
-    },
+    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+    port: Number(process.env.EMAIL_PORT || 587),
+    secure: process.env.EMAIL_PORT === '465',
+    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
   });
-  await transporter.sendMail({
-    from: 'sajjadhossainx0@gmail.com', // sender address
-    to,
-    subject: subject? subject:  'Password change Link : change it by 10 minutes',
-    html,
-  });
+  await transporter.sendMail({ from: process.env.EMAIL_USER, to, subject: subject || 'Busineskal account', html });
 };
 
 export const sendMessageTemplate = ({ email, name,phone, message }) => {

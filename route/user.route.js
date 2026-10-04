@@ -8,21 +8,23 @@ import {
   getPendingSellers,
   updateSellersStatus,
   getAllSuppliers,
-  getSingleSupplier
+  getSingleSupplier,
+  becomeSeller,
 } from "../controller/user.controller.js";
 
-import { protect } from "../middleware/auth.middleware.js";
+import { protect, isAdmin } from "../middleware/auth.middleware.js";
 import upload from "../middleware/multer.middleware.js";
 const router = express.Router();
 
 router.get("/profile", protect, getProfile);
+router.post("/become-seller", protect, becomeSeller);
 router.put("/profile", protect, upload.single("avatar"), updateProfile);
 router.put("/password", protect, changePassword);
 
-router.get("/sellers", protect, getAllSellers);
-router.get("/sellers/pending", protect, getPendingSellers);
-router.patch("/sellers/:userId/status", protect, updateSellersStatus);
-router.delete("/sellers/:userId", protect, deleteSeller);
+router.get("/sellers", protect, isAdmin, getAllSellers);
+router.get("/sellers/pending", protect, isAdmin, getPendingSellers);
+router.patch("/sellers/:userId/status", protect, isAdmin, updateSellersStatus);
+router.delete("/sellers/:userId", protect, isAdmin, deleteSeller);
 
 router.get("/", getAllSuppliers);
 router.get("/:id", getSingleSupplier);

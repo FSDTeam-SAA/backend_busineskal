@@ -18,21 +18,16 @@ import { createNotification, getUserDisplayName } from "./utils/notification.js"
 
 import globalErrorHandler from "./middleware/globalErrorHandler.js";
 import notFound from "./middleware/notFound.js";
+import { corsOptions } from "./utils/corsOptions.js";
 
 const app = express();
 
-app.set("trust proxy", true);
+app.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS || 0));
 
 const server = createServer(app);
 export const io = initSocket(server);
 
-app.use(
-  cors({
-    credentials: true,
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-  })
-);
+app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -46,6 +41,11 @@ app.use("/api/v1", router);
 // Basic route for testing
 app.get("/", (req, res) => {
   res.send("Server is running...!!");
+});
+
+app.get("/health", (req, res) => {
+  const ready = mongoose.connection.readyState === 1;
+  res.status(ready ? 200 : 503).json({ success: ready, database: ready ? "connected" : "unavailable" });
 });
 
 app.use(globalErrorHandler);
@@ -624,14 +624,16 @@ io.on("connection", (socket) => {
 });
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, async () => {
-  console.log(`Server is running on port ${PORT}`);
-
+const startServer = async () => {
   try {
+    if (!process.env.MONGO_DB_URL) throw new Error("MONGO_DB_URL is required");
     await mongoose.connect(process.env.MONGO_DB_URL);
     console.log("MongoDB connected");
+    server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
   } catch (err) {
-    console.error("MongoDB connection error:", err);
+    console.error("Server startup failed:", err.message);
     process.exit(1);
   }
-});
+};
+
+startServer();

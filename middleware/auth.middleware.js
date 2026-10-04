@@ -7,17 +7,19 @@ export const protect = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) throw new AppError(httpStatus.UNAUTHORIZED, "Token not found");
 
+  let decoded;
   try {
-    const decoded = await jwt.verify(token, process.env.JWT_ACCESS_SECRET);
-    // console.log(decoded)
-    const user = await User.findById(decoded._id);
-    if (user) {
-      req.user = user;
-    }
-    next();
-  } catch (err) {
+    decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+  } catch {
     throw new AppError(401, "Invalid token");
   }
+  const user = await User.findById(decoded._id);
+  if (!user) throw new AppError(401, "User no longer exists");
+  if (user.role === "seller" && user.vendorStatus !== "approved") {
+    throw new AppError(403, "Your seller account requires admin approval.");
+  }
+  req.user = user;
+  next();
 };
 
 export const isAdmin = (req, res, next) => {
