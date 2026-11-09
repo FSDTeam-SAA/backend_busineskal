@@ -1,7 +1,3 @@
-import { createRequire } from 'module';
-
-var require = createRequire(import.meta.url);
-var module = { exports: {} };
 
 class AppError extends Error {
   constructor(statusCode, message, stack) {
